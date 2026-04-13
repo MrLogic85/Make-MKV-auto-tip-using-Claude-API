@@ -407,7 +407,13 @@ if (-not (Test-Path $nfoPath)) {
     Write-Log "Created NFO with source: Blu-ray"
 }
 
-Copy-Item -Path $localFinalMkv -Destination $finalMkv -Force
+try {
+    Copy-Item -Path $localFinalMkv -Destination $finalMkv -Force
+} catch {
+    Write-Log "Error: Failed to copy MKV to destination: $_"
+    Remove-Item -Path $localFinalMkv -ErrorAction SilentlyContinue
+    exit
+}
 Remove-Item -Path $localFinalMkv
 Write-Log "Copied MKV to: $finalMkv"
 

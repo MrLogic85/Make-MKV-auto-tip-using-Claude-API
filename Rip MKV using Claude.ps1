@@ -369,11 +369,12 @@ if ($videoTrack) {
             Write-Host "  2: 2.35:1 Scope (1920x816)"
             Write-Host "  3: 2.39:1 Scope (1920x803)"
             Write-Host "  4: 4:3  (1440x1080)"
-            Write-Host "  5: Keep as is"
+            Write-Host "  5: Custom"
+            Write-Host "  6: Keep as is"
             do {
-                $arChoice = Read-Host "Select aspect ratio (1-5)"
-                if ($arChoice -notmatch '^[1-5]$') { Write-Host "Please enter a number between 1 and 5." }
-            } while ($arChoice -notmatch '^[1-5]$')
+                $arChoice = Read-Host "Select aspect ratio (1-6)"
+                if ($arChoice -notmatch '^[1-6]$') { Write-Host "Please enter a number between 1 and 6." }
+            } while ($arChoice -notmatch '^[1-6]$')
 
             $newW = $null
             $newH = $null
@@ -382,6 +383,19 @@ if ($videoTrack) {
                 "2" { $newW = 1920; $newH = 816 }
                 "3" { $newW = 1920; $newH = 803 }
                 "4" { $newW = 1440; $newH = 1080 }
+                "5" {
+                    do {
+                        $customW = Read-Host "Enter display width"
+                        $isValidW = $customW -match '^\d+$' -and [int]$customW -gt 0
+                        if (-not $isValidW) { Write-Host "Please enter a valid positive number." }
+                    } while (-not $isValidW)
+                    do {
+                        $customH = Read-Host "Enter display height"
+                        $isValidH = $customH -match '^\d+$' -and [int]$customH -gt 0
+                        if (-not $isValidH) { Write-Host "Please enter a valid positive number." }
+                    } while (-not $isValidH)
+                    $newW = [int]$customW; $newH = [int]$customH
+                }
             }
 
             if ($newW -and $newH) {

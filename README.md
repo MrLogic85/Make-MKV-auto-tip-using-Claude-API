@@ -50,17 +50,19 @@ $mkvpropedit             = "C:\Program Files\MKVToolNix\mkvpropedit.exe"
 
 ## Workflow
 
-```
-Disc
-    %% MakeMKV       identify disc and available titles
-    %% Claude API    identify movie name from disc metadata
-    %% Claude API    select main feature title
-    %% MakeMKV       rip selected title to local SSD
-    %% MKVToolNix    identify audio tracks in ripped MKV
-    %% Claude API    select audio tracks to keep
-    %% MKVToolNix    filter audio tracks
-    %% aspect ratio  check and optionally correct display dimensions
-    %% NAS           create folder, write NFO, copy MKV
+```mermaid
+flowchart TD
+    A[Disc] --> B[MakeMKV: identify disc and available titles]
+    B --> C[Claude API: identify movie name from disc metadata]
+    C --> D[Claude API: select main feature title]
+    D --> E[MakeMKV: rip selected title to local SSD]
+    E --> F[MKVToolNix: identify audio tracks in ripped MKV]
+    F --> G[Claude API: select audio tracks to keep]
+    G --> H[MKVToolNix: filter audio tracks]
+    H --> I{Aspect ratio OK?}
+    I -- No --> J[Prompt user to correct display dimensions]
+    J --> K[NAS: create folder, write NFO, copy MKV]
+    I -- Yes --> K
 ```
 
 ## Audio selection rules

@@ -385,9 +385,9 @@ if ($videoTrack) {
     }
 }
 
-# Copy to NAS
+# Copy to destination
 Write-Log ""
-Write-Log "Step 4: Copying to NAS..."
+Write-Log "Step 4: Copying to destination..."
 
 if (-not (Test-Path $movieFolder)) {
     New-Item -ItemType Directory -Path $movieFolder | Out-Null

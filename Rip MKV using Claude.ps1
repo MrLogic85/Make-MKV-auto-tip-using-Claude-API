@@ -109,12 +109,12 @@ if ($nameMatch.Success) {
 
 # Fall back to manual input if needed
 if (-not $movieName) {
-    Write-Host ""
-    $movieName = Read-Host "Enter movie name and year (e.g. Inception (2010))"
-    if ([string]::IsNullOrWhiteSpace($movieName)) {
-        Write-Host "No movie name entered. Exiting."
-        exit
-    }
+    do {
+        Write-Host ""
+        $movieName = Read-Host "Enter movie name and year (e.g. Inception (2010))"
+        $isValid = $movieName -match '.+\(\d{4}\)'
+        if (-not $isValid) { Write-Host "Invalid format. Use: Movie Name (Year)" }
+    } while (-not $isValid)
 }
 
 $movieName = $movieName -replace ':', ' -' -replace '"', "'" -replace '[\\/*?<>|]', ''
@@ -127,7 +127,10 @@ Write-Log "Destination: $movieFolder"
 
 if (Test-Path $finalMkv) {
     Write-Log "WARNING: MKV already exists at $finalMkv"
-    $confirm = Read-Host "Overwrite? (y/n)"
+    do {
+        $confirm = Read-Host "Overwrite? (y/n)"
+        if ($confirm -ne 'y' -and $confirm -ne 'n') { Write-Host "Please enter y or n." }
+    } while ($confirm -ne 'y' -and $confirm -ne 'n')
     if ($confirm -ne 'y') {
         Write-Log "Aborted by user."
         exit
@@ -367,7 +370,10 @@ if ($videoTrack) {
             Write-Host "  3: 2.39:1 Scope (1920x803)"
             Write-Host "  4: 4:3  (1440x1080)"
             Write-Host "  5: Keep as is"
-            $arChoice = Read-Host "Select aspect ratio (1-5)"
+            do {
+                $arChoice = Read-Host "Select aspect ratio (1-5)"
+                if ($arChoice -notmatch '^[1-5]$') { Write-Host "Please enter a number between 1 and 5." }
+            } while ($arChoice -notmatch '^[1-5]$')
 
             $newW = $null
             $newH = $null

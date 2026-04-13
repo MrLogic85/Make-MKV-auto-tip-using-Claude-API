@@ -95,7 +95,7 @@ Important: Do not use special Unicode characters like checkmarks or cross marks 
 $claudeNameResponse = Invoke-Claude $namePrompt
 Write-Log "Claude name response: $claudeNameResponse"
 
-$nameMatch = [regex]::Match($claudeNameResponse, 'NAME:(.+)')
+$nameMatch = if ($claudeNameResponse) { [regex]::Match($claudeNameResponse, 'NAME:(.+)') } else { [regex]::Match('', 'NAME:(.+)') }
 if ($nameMatch.Success) {
     $extractedName = $nameMatch.Groups[1].Value.Trim()
     if ($extractedName -ne "UNKNOWN" -and $extractedName -match '.+\(\d{4}\)') {
@@ -215,7 +215,7 @@ $($titleLines -join "`n")
 $claudeTitleResponse = Invoke-Claude $titlePrompt
 Write-Log "Claude title response: $claudeTitleResponse"
 
-$titleMatch = [regex]::Match($claudeTitleResponse, 'TITLE:(\w+)')
+$titleMatch = if ($claudeTitleResponse) { [regex]::Match($claudeTitleResponse, 'TITLE:(\w+)') } else { [regex]::Match('', 'TITLE:(\w+)') }
 if ($titleMatch.Success -and $titleMatch.Groups[1].Value -match '^\d+$') {
     $chosenTitle = [int]$titleMatch.Groups[1].Value
     Write-Log "Claude selected title: $chosenTitle"
@@ -307,7 +307,7 @@ $($trackLines -join "`n")
 $claudeAudioResponse = Invoke-Claude $audioPrompt
 Write-Log "Claude audio response: $claudeAudioResponse"
 
-$match = [regex]::Match($claudeAudioResponse, 'KEEP:([\d,\s]+)')
+$match = if ($claudeAudioResponse) { [regex]::Match($claudeAudioResponse, 'KEEP:([\d,\s]+)') } else { [regex]::Match('', 'KEEP:([\d,\s]+)') }
 if (-not $match.Success) {
     Write-Log "Claude could not determine audio tracks. Keeping all tracks."
     $keepIds = $mkvAudioTracks | ForEach-Object { "$($_.id)" }

@@ -27,12 +27,24 @@ function Invoke-Beep {
     }
 }
 
-function Invoke-Claude($prompt) {
+function Invoke-Claude($prompt, $imagePaths = @()) {
+    $content = @()
+    foreach ($path in $imagePaths) {
+        if (Test-Path $path) {
+            $bytes     = [System.IO.File]::ReadAllBytes($path)
+            $base64    = [Convert]::ToBase64String($bytes)
+            $ext       = [System.IO.Path]::GetExtension($path).ToLower()
+            $mediaType = if ($ext -eq ".png") { "image/png" } else { "image/jpeg" }
+            $content  += @{ type = "image"; source = @{ type = "base64"; media_type = $mediaType; data = $base64 } }
+        }
+    }
+    $content += @{ type = "text"; text = $prompt }
+
     $body = @{
         model    = "claude-sonnet-4-6"
         max_tokens = 500
-        messages = @(@{ role = "user"; content = $prompt })
-    } | ConvertTo-Json -Depth 5
+        messages = @(@{ role = "user"; content = $content })
+    } | ConvertTo-Json -Depth 10
 
     try {
         $response = Invoke-RestMethod `
@@ -196,6 +208,7 @@ while ($true) {
     $movieName    = $null
     $movieEdition = $null
     $bdmtXml      = $null
+    $discImages   = @()
 
     # -------------------------------------------------------------------------
     # Find disc
@@ -242,12 +255,13 @@ while ($true) {
     # -------------------------------------------------------------------------
 
     # Try to read human-readable title from the standard Blu-ray metadata file
-    $bdmtTitle   = $null
-    $volumeLabel = $null
+    $volumeLabel  = $null
+    $discImages   = @()
     if ($driveLetter) {
         try { $volumeLabel = [System.IO.DriveInfo]::new($driveLetter).VolumeLabel } catch {}
 
-        $bdmtPath = Join-Path $driveLetter "BDMV\META\DL\bdmt_eng.xml"
+        $bdmtDir  = Join-Path $driveLetter "BDMV\META\DL"
+        $bdmtPath = Join-Path $bdmtDir "bdmt_eng.xml"
         if (Test-Path $bdmtPath) {
             try {
                 $bdmtXml = Get-Content $bdmtPath -Encoding UTF8 -Raw
@@ -256,6 +270,11 @@ while ($true) {
                 Write-Log "Could not read disc metadata XML."
             }
         }
+
+        $discImages = @(Get-ChildItem -Path $bdmtDir -Include "*.jpg","*.png" -ErrorAction SilentlyContinue |
+            Sort-Object Length -Descending |
+            Select-Object -First 2 -ExpandProperty FullName)
+        if ($discImages.Count -gt 0) { Write-Log "Found $($discImages.Count) disc thumbnail(s)." }
     }
 
     $discIdentifier = if ($volumeLabel) { $volumeLabel } else { $discName }
@@ -299,7 +318,7 @@ The formatting is important since I will parse your response with these regexes:
 Important: Do not use special Unicode characters like checkmarks or cross marks in your response. Use plain text only.
 "@
 
-        $claudeNameResponse = Invoke-Claude $namePrompt
+        $claudeNameResponse = Invoke-Claude $namePrompt $discImages
         Write-Log "Claude name response: $claudeNameResponse"
 
         $nameMatch = if ($claudeNameResponse) {

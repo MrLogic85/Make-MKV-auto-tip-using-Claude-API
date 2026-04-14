@@ -21,19 +21,21 @@ function Write-Log($message) {
 
 function Invoke-Claude($prompt) {
     $body = @{
-        model = "claude-sonnet-4-6"
+        model    = "claude-sonnet-4-6"
         max_tokens = 500
         messages = @(@{ role = "user"; content = $prompt })
     } | ConvertTo-Json -Depth 5
 
     try {
-        $response = Invoke-RestMethod -Uri "https://api.anthropic.com/v1/messages" `
+        $response = Invoke-RestMethod `
+            -Uri "https://api.anthropic.com/v1/messages" `
             -Method POST `
             -Headers @{
-                "x-api-key" = $claudeApiKey
+                "x-api-key"         = $claudeApiKey
                 "anthropic-version" = "2023-06-01"
-                "content-type" = "application/json"
-            } -Body $body
+                "content-type"      = "application/json"
+            } `
+            -Body $body
         return $response.content[0].text.Trim()
     } catch {
         Write-Log "Error calling Claude API: $_"
@@ -42,14 +44,23 @@ function Invoke-Claude($prompt) {
 }
 
 function New-Title {
-    return @{ Size = 0; SizeText = ""; Duration = ""; AudioTrackNums = @(); AudioTracks = @{}; VideoCodec = ""; Resolution = ""; ChapterCount = 0 }
+    return @{
+        Size           = 0
+        SizeText       = ""
+        Duration       = ""
+        AudioTrackNums = @()
+        AudioTracks    = @{}
+        VideoCodec     = ""
+        Resolution     = ""
+        ChapterCount   = 0
+    }
 }
 
 # Verify tools exist
 if (-not (Test-Path $makemkvcon)) { Write-Log "Error: MakeMKV not found at $makemkvcon"; exit }
-if (-not (Test-Path $mkvmerge)) { Write-Log "Error: MKVToolNix not found at $mkvmerge"; exit }
+if (-not (Test-Path $mkvmerge))   { Write-Log "Error: MKVToolNix not found at $mkvmerge"; exit }
 
-# Ask for destination upfront
+# Ask for destination once upfront
 Write-Host ""
 $destRoot = Read-Host "Enter destination folder (press Enter for $defaultDestRoot)"
 if ([string]::IsNullOrWhiteSpace($destRoot)) {
@@ -58,35 +69,41 @@ if ([string]::IsNullOrWhiteSpace($destRoot)) {
 
 $lastDiscName = $null
 while ($true) {
-$movieName = $null
 
-# Find disc
-Write-Log "Scanning for disc..."
-$infoOutput = & $makemkvcon -r info disc:0 2>&1
-$driveFound = $infoOutput | Where-Object { $_ -match '^DRV:0,' -and $_ -notmatch ',256,' }
+    $movieName = $null
 
-if (-not $driveFound) {
-    Write-Log "Error: No disc found in drive 0. Please insert disc and try again."
-    exit
-}
+    # -------------------------------------------------------------------------
+    # Find disc
+    # -------------------------------------------------------------------------
+    Write-Log "Scanning for disc..."
+    $infoOutput = & $makemkvcon -r info disc:0 2>&1
+    $driveFound = $infoOutput | Where-Object { $_ -match '^DRV:0,' -and $_ -notmatch ',256,' }
 
-Write-Log "Disc found. Fetching title information..."
-
-# Extract disc name from CINFO
-$discName = ""
-foreach ($line in $infoOutput) {
-    if ($line -match '^CINFO:2,0,"([^"]+)"') {
-        $discName = $matches[1]
-        break
+    if (-not $driveFound) {
+        Write-Log "Error: No disc found in drive 0. Please insert disc and try again."
+        exit
     }
-}
 
-if ($discName -and $discName -eq $lastDiscName) {
-    Write-Log "WARNING: Same disc detected ('$discName'). Please insert a different disc. Exiting."
-    exit
-}
+    Write-Log "Disc found. Fetching title information..."
 
-$namePrompt = @"
+    # Extract disc name from CINFO
+    $discName = ""
+    foreach ($line in $infoOutput) {
+        if ($line -match '^CINFO:2,0,"([^"]+)"') {
+            $discName = $matches[1]
+            break
+        }
+    }
+
+    if ($discName -and $discName -eq $lastDiscName) {
+        Write-Log "WARNING: Same disc detected ('$discName'). Please insert a different disc. Exiting."
+        exit
+    }
+
+    # -------------------------------------------------------------------------
+    # Identify movie name via Claude
+    # -------------------------------------------------------------------------
+    $namePrompt = @"
 The following is a Blu-ray disc name: "$discName"
 
 Please identify the movie and format it exactly as: Movie Name (Year)
@@ -100,119 +117,134 @@ The formatting of the last line is important since I will parse your response wi
 Important: Do not use special Unicode characters like checkmarks or cross marks in your response. Use plain text only.
 "@
 
-$claudeNameResponse = Invoke-Claude $namePrompt
-Write-Log "Claude name response: $claudeNameResponse"
+    $claudeNameResponse = Invoke-Claude $namePrompt
+    Write-Log "Claude name response: $claudeNameResponse"
 
-$nameMatch = if ($claudeNameResponse) { [regex]::Match($claudeNameResponse, 'NAME:(.+)') } else { [regex]::Match('', 'NAME:(.+)') }
-if ($nameMatch.Success) {
-    $extractedName = $nameMatch.Groups[1].Value.Trim()
-    if ($extractedName -ne "UNKNOWN" -and $extractedName -match '.+\(\d{4}\)') {
-        $movieName = $extractedName
-        Write-Log "Claude identified movie: $movieName"
+    $nameMatch = if ($claudeNameResponse) {
+        [regex]::Match($claudeNameResponse, 'NAME:(.+)')
     } else {
-        Write-Log "Claude could not identify movie from disc name."
+        [regex]::Match('', 'NAME:(.+)')
     }
-} else {
-    Write-Log "Claude returned unexpected response for movie name."
-}
 
-# Fall back to manual input if needed
-if (-not $movieName) {
-    do {
-        Write-Host ""
-        $movieName = Read-Host "Enter movie name and year (e.g. Inception (2010))"
-        $isValid = $movieName -match '.+\(\d{4}\)'
-        if (-not $isValid) { Write-Host "Invalid format. Use: Movie Name (Year)" }
-    } while (-not $isValid)
-}
-
-$movieName = $movieName -replace ':', ' -' -replace '"', "'" -replace '[\\/*?<>|]', ''
-$movieName = $movieName -replace '\s{2,}', ' '
-$movieFolder = Join-Path $destRoot $movieName
-$finalMkv = Join-Path $movieFolder "$movieName.mkv"
-
-Write-Log "Movie: $movieName"
-Write-Log "Destination: $movieFolder"
-
-if (Test-Path $finalMkv) {
-    Write-Log "WARNING: MKV already exists at $finalMkv"
-    do {
-        $confirm = Read-Host "Overwrite? (y/n)"
-        if ($confirm -ne 'y' -and $confirm -ne 'n') { Write-Host "Please enter y or n." }
-    } while ($confirm -ne 'y' -and $confirm -ne 'n')
-    if ($confirm -ne 'y') {
-        Write-Log "Aborted by user."
-        continue
+    if ($nameMatch.Success) {
+        $extractedName = $nameMatch.Groups[1].Value.Trim()
+        if ($extractedName -ne "UNKNOWN" -and $extractedName -match '.+\(\d{4}\)') {
+            $movieName = $extractedName
+            Write-Log "Claude identified movie: $movieName"
+        } else {
+            Write-Log "Claude could not identify movie from disc name."
+        }
+    } else {
+        Write-Log "Claude returned unexpected response for movie name."
     }
-}
 
-# Parse titles
-$titles = @{}
+    # Fall back to manual input if needed
+    if (-not $movieName) {
+        do {
+            Write-Host ""
+            $movieName = Read-Host "Enter movie name and year (e.g. Inception (2010))"
+            $isValid = $movieName -match '.+\(\d{4}\)'
+            if (-not $isValid) { Write-Host "Invalid format. Use: Movie Name (Year)" }
+        } while (-not $isValid)
+    }
 
-foreach ($line in $infoOutput) {
-    if ($line -match '^TINFO:(\d+),11,0,"(\d+)"') {
-        $tNum = [int]$matches[1]
-        if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-        $titles[$tNum].Size = [long]$matches[2]
-        $titles[$tNum].SizeText = [math]::Round([long]$matches[2] / 1GB, 2).ToString() + " GB"
-    }
-    if ($line -match '^TINFO:(\d+),9,0,"([^"]+)"') {
-        $tNum = [int]$matches[1]
-        if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-        $titles[$tNum].Duration = $matches[2]
-    }
-    if ($line -match '^SINFO:(\d+),0,7,0,"([^"]+)"') {
-        $tNum = [int]$matches[1]
-        if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-        $titles[$tNum].VideoCodec = $matches[2]
-    }
-    if ($line -match '^SINFO:(\d+),(\d+),1,6202,"Audio"') {
-        $tNum = [int]$matches[1]; $trackNum = [int]$matches[2]
-        if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-        if (-not $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
-            $titles[$tNum].AudioTracks[$trackNum] = @{ TrackNum = $trackNum; ShortName = ""; Language = "" }
-            $titles[$tNum].AudioTrackNums += $trackNum
+    $movieName = $movieName -replace ':', ' -' -replace '"', "'" -replace '[\\/*?<>|]', ''
+    $movieName = $movieName -replace '\s{2,}', ' '
+
+    $movieFolder = Join-Path $destRoot $movieName
+    $finalMkv   = Join-Path $movieFolder "$movieName.mkv"
+
+    Write-Log "Movie: $movieName"
+    Write-Log "Destination: $movieFolder"
+
+    if (Test-Path $finalMkv) {
+        Write-Log "WARNING: MKV already exists at $finalMkv"
+        do {
+            $confirm = Read-Host "Overwrite? (y/n)"
+            if ($confirm -ne 'y' -and $confirm -ne 'n') { Write-Host "Please enter y or n." }
+        } while ($confirm -ne 'y' -and $confirm -ne 'n')
+        if ($confirm -ne 'y') {
+            Write-Log "Aborted by user."
+            continue
         }
     }
-    if ($line -match '^SINFO:(\d+),(\d+),6,0,"([^"]+)"') {
-        $tNum = [int]$matches[1]; $trackNum = [int]$matches[2]
-        if ($titles.ContainsKey($tNum) -and $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
-            $titles[$tNum].AudioTracks[$trackNum].ShortName = $matches[3]
+
+    # -------------------------------------------------------------------------
+    # Parse titles from disc info
+    # -------------------------------------------------------------------------
+    $titles = @{}
+
+    foreach ($line in $infoOutput) {
+        if ($line -match '^TINFO:(\d+),11,0,"(\d+)"') {
+            $tNum = [int]$matches[1]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            $titles[$tNum].Size     = [long]$matches[2]
+            $titles[$tNum].SizeText = [math]::Round([long]$matches[2] / 1GB, 2).ToString() + " GB"
+        }
+        if ($line -match '^TINFO:(\d+),9,0,"([^"]+)"') {
+            $tNum = [int]$matches[1]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            $titles[$tNum].Duration = $matches[2]
+        }
+        if ($line -match '^TINFO:(\d+),25,0,"(\d+)"') {
+            $tNum = [int]$matches[1]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            $titles[$tNum].ChapterCount = [int]$matches[2]
+        }
+        if ($line -match '^SINFO:(\d+),0,7,0,"([^"]+)"') {
+            $tNum = [int]$matches[1]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            $titles[$tNum].VideoCodec = $matches[2]
+        }
+        if ($line -match '^SINFO:(\d+),0,19,0,"([^"]+)"') {
+            $tNum = [int]$matches[1]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            $titles[$tNum].Resolution = $matches[2]
+        }
+        if ($line -match '^SINFO:(\d+),(\d+),1,6202,"Audio"') {
+            $tNum     = [int]$matches[1]
+            $trackNum = [int]$matches[2]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            if (-not $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
+                $titles[$tNum].AudioTracks[$trackNum] = @{ TrackNum = $trackNum; ShortName = ""; Language = "" }
+                $titles[$tNum].AudioTrackNums += $trackNum
+            }
+        }
+        if ($line -match '^SINFO:(\d+),(\d+),6,0,"([^"]+)"') {
+            $tNum     = [int]$matches[1]
+            $trackNum = [int]$matches[2]
+            if ($titles.ContainsKey($tNum) -and $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
+                $titles[$tNum].AudioTracks[$trackNum].ShortName = $matches[3]
+            }
+        }
+        if ($line -match '^SINFO:(\d+),(\d+),3,0,"([a-z]{3})"') {
+            $tNum     = [int]$matches[1]
+            $trackNum = [int]$matches[2]
+            if ($titles.ContainsKey($tNum) -and $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
+                $titles[$tNum].AudioTracks[$trackNum].Language = $matches[3]
+            }
         }
     }
-    if ($line -match '^SINFO:(\d+),(\d+),3,0,"([a-z]{3})"') {
-        $tNum = [int]$matches[1]; $trackNum = [int]$matches[2]
-        if ($titles.ContainsKey($tNum) -and $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
-            $titles[$tNum].AudioTracks[$trackNum].Language = $matches[3]
-        }
-    }
-    if ($line -match '^TINFO:(\d+),25,0,"(\d+)"') {
-        $tNum = [int]$matches[1]
-        if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-        $titles[$tNum].ChapterCount = [int]$matches[2]
-    }
-    if ($line -match '^SINFO:(\d+),0,19,0,"([^"]+)"') {
-        $tNum = [int]$matches[1]
-        if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-        $titles[$tNum].Resolution = $matches[2]
-    }
-}
 
-# Build title list for display and Claude
-Write-Log ""
-Write-Log "Available titles:"
-$titleLines = @()
-foreach ($t in ($titles.GetEnumerator() | Where-Object { $_.Value.AudioTracks.Count -gt 0 } | Sort-Object Key)) {
-    $audioList = ($t.Value.AudioTrackNums | ForEach-Object { $t.Value.AudioTracks[$_] } | ForEach-Object { "$($_.ShortName)[$($_.Language)]" }) -join ", "
-    Write-Log "  Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters"
-    Write-Log "    Audio: $audioList"
-    $titleLines += "Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters, Audio: $audioList"
-}
+    # -------------------------------------------------------------------------
+    # Select title via Claude
+    # -------------------------------------------------------------------------
+    Write-Log ""
+    Write-Log "Available titles:"
+    $titleLines = @()
+    $titlesWithAudio = $titles.GetEnumerator() | Where-Object { $_.Value.AudioTracks.Count -gt 0 } | Sort-Object Key
+    foreach ($t in $titlesWithAudio) {
+        $audioList = ($t.Value.AudioTrackNums |
+            ForEach-Object { $t.Value.AudioTracks[$_] } |
+            ForEach-Object { "$($_.ShortName)[$($_.Language)]" }) -join ", "
+        Write-Log "  Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters"
+        Write-Log "    Audio: $audioList"
+        $titleLines += "Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters, Audio: $audioList"
+    }
 
-# Ask Claude to pick the best title
-Write-Log ""
-Write-Log "Asking Claude to select best title..."
-$titlePrompt = @"
+    Write-Log ""
+    Write-Log "Asking Claude to select best title..."
+    $titlePrompt = @"
 I am ripping the Blu-ray movie '$movieName'. Below are the available titles found on the disc. Please identify which title number is the main feature film. Consider the expected runtime of this movie and look for the title that best matches. Ignore bonus features, trailers, commentary tracks and short clips.
 
 Return your answer as: TITLE:number
@@ -225,89 +257,100 @@ Important: Do not use special Unicode characters like checkmarks or cross marks 
 $($titleLines -join "`n")
 "@
 
-$claudeTitleResponse = Invoke-Claude $titlePrompt
-Write-Log "Claude title response: $claudeTitleResponse"
+    $claudeTitleResponse = Invoke-Claude $titlePrompt
+    Write-Log "Claude title response: $claudeTitleResponse"
 
-$titleMatch = if ($claudeTitleResponse) { [regex]::Match($claudeTitleResponse, 'TITLE:(\w+)') } else { [regex]::Match('', 'TITLE:(\w+)') }
-if ($titleMatch.Success -and $titleMatch.Groups[1].Value -match '^\d+$') {
-    $chosenTitle = [int]$titleMatch.Groups[1].Value
-    Write-Log "Claude selected title: $chosenTitle"
-} else {
-    Write-Log "Claude could not determine title. Please select manually."
-    $validTitleNums = $titles.Keys | Where-Object { $titles[$_].AudioTracks.Count -gt 0 }
-    do {
-        Write-Host ""
-        $val = Read-Host "Enter title number ($($validTitleNums -join ', '))"
-        $isValid = $val -match '^\d+$' -and $validTitleNums -contains [int]$val
-        if (-not $isValid) { Write-Host "Invalid title number. Please try again." }
-    } while (-not $isValid)
-    $chosenTitle = [int]$val
-}
+    $titleMatch = if ($claudeTitleResponse) {
+        [regex]::Match($claudeTitleResponse, 'TITLE:(\w+)')
+    } else {
+        [regex]::Match('', 'TITLE:(\w+)')
+    }
 
-# Rip
-Write-Host ""
-Write-Log "Step 1: Ripping title $chosenTitle from disc..."
+    if ($titleMatch.Success -and $titleMatch.Groups[1].Value -match '^\d+$') {
+        $chosenTitle = [int]$titleMatch.Groups[1].Value
+        Write-Log "Claude selected title: $chosenTitle"
+    } else {
+        Write-Log "Claude could not determine title. Please select manually."
+        $validTitleNums = $titles.Keys | Where-Object { $titles[$_].AudioTracks.Count -gt 0 }
+        do {
+            Write-Host ""
+            $val     = Read-Host "Enter title number ($($validTitleNums -join ', '))"
+            $isValid = $val -match '^\d+$' -and $validTitleNums -contains [int]$val
+            if (-not $isValid) { Write-Host "Invalid title number. Please try again." }
+        } while (-not $isValid)
+        $chosenTitle = [int]$val
+    }
 
-$beforeRip = Get-Date
-$tempMkv = Join-Path $localTemp "temp_ripping_$([System.Guid]::NewGuid().ToString('N')).mkv"
-& $makemkvcon mkv disc:0 $chosenTitle "$localTemp"
-$generatedMkv = Get-ChildItem -Path $localTemp -Filter "*.mkv" | Where-Object { $_.LastWriteTime -gt $beforeRip } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    # -------------------------------------------------------------------------
+    # Step 1: Rip
+    # -------------------------------------------------------------------------
+    Write-Host ""
+    Write-Log "Step 1: Ripping title $chosenTitle from disc..."
 
-if (-not $generatedMkv) {
-    Write-Log "Error: Could not find ripped MKV file. Exiting."
-    exit
-}
+    $beforeRip = Get-Date
+    $tempMkv   = Join-Path $localTemp "temp_ripping_$([System.Guid]::NewGuid().ToString('N')).mkv"
+    & $makemkvcon mkv disc:0 $chosenTitle "$localTemp"
+    $generatedMkv = Get-ChildItem -Path $localTemp -Filter "*.mkv" |
+        Where-Object { $_.LastWriteTime -gt $beforeRip } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
 
-Rename-Item -Path $generatedMkv.FullName -NewName (Split-Path $tempMkv -Leaf)
+    if (-not $generatedMkv) {
+        Write-Log "Error: Could not find ripped MKV file. Exiting."
+        exit
+    }
 
-# Identify audio tracks
-Write-Log ""
-Write-Log "Step 2: Identifying audio tracks in MKV..."
+    Rename-Item -Path $generatedMkv.FullName -NewName (Split-Path $tempMkv -Leaf)
 
-try {
-    $identifyOutput = & $mkvmerge --identify --identification-format json "$tempMkv" 2>&1
-    $mkvJson = $identifyOutput | ConvertFrom-Json
-} catch {
-    Write-Log "Error: Failed to parse MKVToolNix JSON output: $_. Exiting."
-    exit
-}
+    # -------------------------------------------------------------------------
+    # Step 2: Identify and select audio tracks via Claude
+    # -------------------------------------------------------------------------
+    Write-Log ""
+    Write-Log "Step 2: Identifying audio tracks in MKV..."
 
-$mkvAudioTracks = $mkvJson.tracks | Where-Object { $_.type -eq "audio" }
+    try {
+        $identifyOutput = & $mkvmerge --identify --identification-format json "$tempMkv" 2>&1
+        $mkvJson = $identifyOutput | ConvertFrom-Json
+    } catch {
+        Write-Log "Error: Failed to parse MKVToolNix JSON output: $_. Exiting."
+        exit
+    }
 
-if (-not $mkvAudioTracks) {
-    Write-Log "Error: No audio tracks found in MKV. Exiting."
-    exit
-}
+    $mkvAudioTracks = $mkvJson.tracks | Where-Object { $_.type -eq "audio" }
 
-Write-Log "Audio tracks in MKV:"
-$trackLines = @()
-foreach ($track in $mkvAudioTracks) {
-    $lang = $track.properties.language
-    $codec = $track.codec
-    $channels = $track.properties.audio_channels
-    $sampleRate = $track.properties.audio_sampling_frequency
-    $bitDepth = $track.properties.audio_bits_per_sample
-    $trackName = $track.properties.track_name
-    $default = $track.properties.default_track
-    $forced = $track.properties.forced_track
+    if (-not $mkvAudioTracks) {
+        Write-Log "Error: No audio tracks found in MKV. Exiting."
+        exit
+    }
 
-    $info = "Track $($track.id): $codec [$lang]"
-    if ($channels) { $info += ", $channels channels" }
-    if ($sampleRate) { $info += ", ${sampleRate}Hz" }
-    if ($bitDepth) { $info += ", ${bitDepth}-bit" }
-    if ($trackName) { $info += ", name: '$trackName'" }
-    if ($default) { $info += ", default" }
-    if ($forced) { $info += ", forced" }
+    Write-Log "Audio tracks in MKV:"
+    $trackLines = @()
+    foreach ($track in $mkvAudioTracks) {
+        $lang      = $track.properties.language
+        $codec     = $track.codec
+        $channels  = $track.properties.audio_channels
+        $sampleRate = $track.properties.audio_sampling_frequency
+        $bitDepth  = $track.properties.audio_bits_per_sample
+        $trackName = $track.properties.track_name
+        $default   = $track.properties.default_track
+        $forced    = $track.properties.forced_track
 
-    Write-Log "  $info"
-    $trackLines += $info
-}
+        $info = "Track $($track.id): $codec [$lang]"
+        if ($channels)   { $info += ", $channels channels" }
+        if ($sampleRate) { $info += ", ${sampleRate}Hz" }
+        if ($bitDepth)   { $info += ", ${bitDepth}-bit" }
+        if ($trackName)  { $info += ", name: '$trackName'" }
+        if ($default)    { $info += ", default" }
+        if ($forced)     { $info += ", forced" }
 
-# Ask Claude to pick the best audio tracks
-Write-Log ""
-Write-Log "Asking Claude to select audio tracks..."
-$langList = $preferredAudioLanguages -join ", "
-$audioPrompt = @"
+        Write-Log "  $info"
+        $trackLines += $info
+    }
+
+    Write-Log ""
+    Write-Log "Asking Claude to select audio tracks..."
+    $langList    = $preferredAudioLanguages -join ", "
+    $audioPrompt = @"
 I have an MKV file of the movie '$movieName' with the following audio tracks. Please select which track IDs to keep based on these rules:
 1. Keep the highest quality format available (TrueHD or DTS-HD MA preferred over DTS or AC-3)
 2. Keep tracks in these preferred languages: $langList
@@ -322,170 +365,180 @@ Important: Do not use special Unicode characters like checkmarks or cross marks 
 $($trackLines -join "`n")
 "@
 
-$claudeAudioResponse = Invoke-Claude $audioPrompt
-Write-Log "Claude audio response: $claudeAudioResponse"
+    $claudeAudioResponse = Invoke-Claude $audioPrompt
+    Write-Log "Claude audio response: $claudeAudioResponse"
 
-$match = if ($claudeAudioResponse) { [regex]::Match($claudeAudioResponse, 'KEEP:([\d,\s]+)') } else { [regex]::Match('', 'KEEP:([\d,\s]+)') }
-if (-not $match.Success) {
-    Write-Log "Claude could not determine audio tracks. Keeping all tracks."
-    $keepIds = $mkvAudioTracks | ForEach-Object { "$($_.id)" }
-} else {
-    $keepIds = $match.Groups[1].Value -split "," | ForEach-Object { $_.Trim() }
-    Write-Log "Claude selected tracks: $($keepIds -join ', ')"
-}
+    $audioMatch = if ($claudeAudioResponse) {
+        [regex]::Match($claudeAudioResponse, 'KEEP:([\d,\s]+)')
+    } else {
+        [regex]::Match('', 'KEEP:([\d,\s]+)')
+    }
 
-if ($keepIds.Count -eq 0) {
-    Write-Log "No track IDs extracted. Keeping all tracks."
-    $keepIds = $mkvAudioTracks | ForEach-Object { "$($_.id)" }
-}
+    if (-not $audioMatch.Success) {
+        Write-Log "Claude could not determine audio tracks. Keeping all tracks."
+        $keepIds = $mkvAudioTracks | ForEach-Object { "$($_.id)" }
+    } else {
+        $keepIds = $audioMatch.Groups[1].Value -split "," | ForEach-Object { $_.Trim() }
+        Write-Log "Claude selected tracks: $($keepIds -join ', ')"
+    }
 
-# Filter with MKVToolNix
-Write-Log ""
-Write-Log "Step 3: Filtering with MKVToolNix..."
+    if ($keepIds.Count -eq 0) {
+        Write-Log "No track IDs extracted. Keeping all tracks."
+        $keepIds = $mkvAudioTracks | ForEach-Object { "$($_.id)" }
+    }
 
-$localFinalMkv = Join-Path $localTemp "$movieName.mkv"
-$audioArg = $keepIds -join ","
+    # -------------------------------------------------------------------------
+    # Step 3: Filter audio with MKVToolNix
+    # -------------------------------------------------------------------------
+    Write-Log ""
+    Write-Log "Step 3: Filtering audio with MKVToolNix..."
 
-& $mkvmerge -o "$localFinalMkv" --audio-tracks $audioArg "$tempMkv"
+    $localFinalMkv = Join-Path $localTemp "$movieName.mkv"
+    $audioArg      = $keepIds -join ","
 
-if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1) {
-    Remove-Item -Path $tempMkv
-    Write-Log "Removed temporary MKV."
-} else {
-    Write-Log "Error: MKVToolNix failed (exit code $LASTEXITCODE). Temporary MKV kept at: $tempMkv"
-    exit
-}
+    & $mkvmerge -o "$localFinalMkv" --audio-tracks $audioArg "$tempMkv"
 
-# Check display dimensions
-$videoJson = & $mkvmerge --identify --identification-format json "$localFinalMkv" 2>&1 | ConvertFrom-Json
-$videoTrack = $videoJson.tracks | Where-Object { $_.type -eq "video" } | Select-Object -First 1
+    if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1) {
+        Remove-Item -Path $tempMkv
+        Write-Log "Removed temporary MKV."
+    } else {
+        Write-Log "Error: MKVToolNix failed (exit code $LASTEXITCODE). Temporary MKV kept at: $tempMkv"
+        exit
+    }
 
-if ($videoTrack) {
-    $displayDim = $videoTrack.properties.display_dimensions
-    $pixelDim = $videoTrack.properties.pixel_dimensions
+    # Check display dimensions
+    $videoJson  = & $mkvmerge --identify --identification-format json "$localFinalMkv" 2>&1 | ConvertFrom-Json
+    $videoTrack = $videoJson.tracks | Where-Object { $_.type -eq "video" } | Select-Object -First 1
 
-    if ($displayDim -match '(\d+)x(\d+)') {
-        $dispW = [int]$matches[1]
-        $dispH = [int]$matches[2]
-        $ratio = $dispW / $dispH
+    if ($videoTrack) {
+        $displayDim = $videoTrack.properties.display_dimensions
+        $pixelDim   = $videoTrack.properties.pixel_dimensions
 
-        if ($ratio -gt 0.9 -and $ratio -lt 1.1) {
-            Write-Log "WARNING: Display dimensions look wrong ($displayDim, nearly 1:1). Pixel dimensions are $pixelDim."
-            Write-Log "Please check the video manually and select the correct aspect ratio."
-            Write-Host ""
-            Write-Host "Common aspect ratios:"
-            Write-Host "  1: 16:9  (1920x1080)"
-            Write-Host "  2: 2.35:1 Scope (1920x816)"
-            Write-Host "  3: 2.39:1 Scope (1920x803)"
-            Write-Host "  4: 4:3  (1440x1080)"
-            Write-Host "  5: Custom"
-            Write-Host "  6: Keep as is"
-            do {
-                $arChoice = Read-Host "Select aspect ratio (1-6)"
-                if ($arChoice -notmatch '^[1-6]$') { Write-Host "Please enter a number between 1 and 6." }
-            } while ($arChoice -notmatch '^[1-6]$')
+        if ($displayDim -match '(\d+)x(\d+)') {
+            $dispW = [int]$matches[1]
+            $dispH = [int]$matches[2]
+            $ratio = $dispW / $dispH
 
-            $newW = $null
-            $newH = $null
-            switch ($arChoice) {
-                "1" { $newW = 1920; $newH = 1080 }
-                "2" { $newW = 1920; $newH = 816 }
-                "3" { $newW = 1920; $newH = 803 }
-                "4" { $newW = 1440; $newH = 1080 }
-                "5" {
-                    do {
-                        $customW = Read-Host "Enter display width"
-                        $isValidW = $customW -match '^\d+$' -and [int]$customW -gt 0
-                        if (-not $isValidW) { Write-Host "Please enter a valid positive number." }
-                    } while (-not $isValidW)
-                    do {
-                        $customH = Read-Host "Enter display height"
-                        $isValidH = $customH -match '^\d+$' -and [int]$customH -gt 0
-                        if (-not $isValidH) { Write-Host "Please enter a valid positive number." }
-                    } while (-not $isValidH)
-                    $newW = [int]$customW; $newH = [int]$customH
+            if ($ratio -gt 0.9 -and $ratio -lt 1.1) {
+                Write-Log "WARNING: Display dimensions look wrong ($displayDim, nearly 1:1). Pixel dimensions are $pixelDim."
+                Write-Log "Please check the video manually and select the correct aspect ratio."
+                Write-Host ""
+                Write-Host "Common aspect ratios:"
+                Write-Host "  1: 16:9      (1920x1080)"
+                Write-Host "  2: 2.35:1    (1920x816)"
+                Write-Host "  3: 2.39:1    (1920x803)"
+                Write-Host "  4: 4:3       (1440x1080)"
+                Write-Host "  5: Custom"
+                Write-Host "  6: Keep as is"
+                do {
+                    $arChoice = Read-Host "Select aspect ratio (1-6)"
+                    if ($arChoice -notmatch '^[1-6]$') { Write-Host "Please enter a number between 1 and 6." }
+                } while ($arChoice -notmatch '^[1-6]$')
+
+                $newW = $null
+                $newH = $null
+                switch ($arChoice) {
+                    "1" { $newW = 1920; $newH = 1080 }
+                    "2" { $newW = 1920; $newH = 816 }
+                    "3" { $newW = 1920; $newH = 803 }
+                    "4" { $newW = 1440; $newH = 1080 }
+                    "5" {
+                        do {
+                            $customW  = Read-Host "Enter display width"
+                            $isValidW = $customW -match '^\d+$' -and [int]$customW -gt 0
+                            if (-not $isValidW) { Write-Host "Please enter a valid positive number." }
+                        } while (-not $isValidW)
+                        do {
+                            $customH  = Read-Host "Enter display height"
+                            $isValidH = $customH -match '^\d+$' -and [int]$customH -gt 0
+                            if (-not $isValidH) { Write-Host "Please enter a valid positive number." }
+                        } while (-not $isValidH)
+                        $newW = [int]$customW
+                        $newH = [int]$customH
+                    }
                 }
-            }
 
-            if ($newW -and $newH) {
-                & $mkvpropedit "$localFinalMkv" --edit track:v1 --set display-width=$newW --set display-height=$newH
-                if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1) {
-                    Write-Log "Fixed display dimensions to ${newW}x${newH}."
+                if ($newW -and $newH) {
+                    & $mkvpropedit "$localFinalMkv" --edit track:v1 --set display-width=$newW --set display-height=$newH
+                    if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1) {
+                        Write-Log "Fixed display dimensions to ${newW}x${newH}."
+                    } else {
+                        Write-Log "WARNING: Failed to fix display dimensions."
+                    }
                 } else {
-                    Write-Log "WARNING: Failed to fix display dimensions."
+                    Write-Log "Display dimensions kept as is."
                 }
-            } else {
-                Write-Log "Display dimensions kept as is."
             }
         }
     }
-}
 
-# Copy to destination
-Write-Log ""
-Write-Log "Step 4: Copying to destination..."
+    # -------------------------------------------------------------------------
+    # Step 4: Copy to destination
+    # -------------------------------------------------------------------------
+    Write-Log ""
+    Write-Log "Step 4: Copying to destination..."
 
-if (-not (Test-Path $movieFolder)) {
-    New-Item -ItemType Directory -Path $movieFolder | Out-Null
-    Write-Log "Created folder: $movieFolder"
-}
+    if (-not (Test-Path $movieFolder)) {
+        New-Item -ItemType Directory -Path $movieFolder | Out-Null
+        Write-Log "Created folder: $movieFolder"
+    }
 
-# Write minimal NFO with source
-$nfoPath = Join-Path $movieFolder "$movieName.nfo"
-if (-not (Test-Path $nfoPath)) {
-    $nfoContent = @"
+    $nfoPath = Join-Path $movieFolder "$movieName.nfo"
+    if (-not (Test-Path $nfoPath)) {
+        $nfoContent = @"
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <movie>
     <source>Blu-ray</source>
 </movie>
 "@
-    [System.IO.File]::WriteAllText($nfoPath, $nfoContent, [System.Text.Encoding]::UTF8)
-    Write-Log "Created NFO with source: Blu-ray"
-}
+        [System.IO.File]::WriteAllText($nfoPath, $nfoContent, [System.Text.Encoding]::UTF8)
+        Write-Log "Created NFO with source: Blu-ray"
+    }
 
-try {
-    Copy-Item -Path $localFinalMkv -Destination $finalMkv -Force
-} catch {
-    Write-Log "Error: Failed to copy MKV to destination: $_"
-    Remove-Item -Path $localFinalMkv -ErrorAction SilentlyContinue
-    exit
-}
-Remove-Item -Path $localFinalMkv
-Write-Log "Copied MKV to: $finalMkv"
+    try {
+        Copy-Item -Path $localFinalMkv -Destination $finalMkv -Force
+    } catch {
+        Write-Log "Error: Failed to copy MKV to destination: $_"
+        Remove-Item -Path $localFinalMkv -ErrorAction SilentlyContinue
+        exit
+    }
+    Remove-Item -Path $localFinalMkv
+    Write-Log "Copied MKV to: $finalMkv"
 
-$fileSize = [math]::Round((Get-Item $finalMkv).Length / 1GB, 2)
-$keptTracks = $mkvAudioTracks | Where-Object { $keepIds -contains "$($_.id)" }
-$audioSummary = ($keptTracks | ForEach-Object { "$($_.codec)[$($_.properties.language)]" }) -join ", "
+    $fileSize    = [math]::Round((Get-Item $finalMkv).Length / 1GB, 2)
+    $keptTracks  = $mkvAudioTracks | Where-Object { $keepIds -contains "$($_.id)" }
+    $audioSummary = ($keptTracks | ForEach-Object { "$($_.codec)[$($_.properties.language)]" }) -join ", "
 
-Write-Log ""
-Write-Log "=== DONE ==="
-Write-Log "Movie: $movieName"
-Write-Log "Audio: $audioSummary"
-Write-Log "Size: $fileSize GB"
-Write-Log "Location: $finalMkv"
-Write-Log "Log saved to: $logFile"
+    Write-Log ""
+    Write-Log "=== DONE ==="
+    Write-Log "Movie: $movieName"
+    Write-Log "Audio: $audioSummary"
+    Write-Log "Size: $fileSize GB"
+    Write-Log "Location: $finalMkv"
+    Write-Log "Log saved to: $logFile"
 
-$lastDiscName = $discName
+    $lastDiscName = $discName
 
-# Eject disc
-$driveLine = $driveFound | Select-Object -First 1
-$driveLetter = if ($driveLine -match '"([A-Z]:)"') { $matches[1] } else { $null }
-if ($driveLetter) {
-    Write-Log "Ejecting disc ($driveLetter)..."
-    $shell = New-Object -ComObject Shell.Application
-    $shell.Namespace(17).ParseName($driveLetter).InvokeVerb("Eject")
-} else {
-    Write-Log "Could not determine drive letter for eject."
-}
+    # -------------------------------------------------------------------------
+    # Eject disc and wait for next
+    # -------------------------------------------------------------------------
+    $driveLine   = $driveFound | Select-Object -First 1
+    $driveLetter = if ($driveLine -match '"([A-Z]:)"') { $matches[1] } else { $null }
+    if ($driveLetter) {
+        Write-Log "Ejecting disc ($driveLetter)..."
+        $shell = New-Object -ComObject Shell.Application
+        $shell.Namespace(17).ParseName($driveLetter).InvokeVerb("Eject")
+    } else {
+        Write-Log "Could not determine drive letter for eject."
+    }
 
-# Wait for new disc
-Write-Host ""
-Write-Log "Waiting for next disc..."
-do {
-    Start-Sleep -Seconds 5
-    $pollOutput = & $makemkvcon -r info disc:0 2>&1
-    $discReady = $pollOutput | Where-Object { $_ -match '^DRV:0,' -and $_ -notmatch ',256,' }
-} while (-not $discReady)
-Write-Log "New disc detected."
+    Write-Host ""
+    Write-Log "Waiting for next disc..."
+    do {
+        Start-Sleep -Seconds 5
+        $pollOutput = & $makemkvcon -r info disc:0 2>&1
+        $discReady  = $pollOutput | Where-Object { $_ -match '^DRV:0,' -and $_ -notmatch ',256,' }
+    } while (-not $discReady)
+    Write-Log "New disc detected."
 
 } # end while

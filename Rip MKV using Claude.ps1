@@ -757,7 +757,7 @@ $($trackLines -join "`n")
     $keptTracks   = $mkvAudioTracks | Where-Object { $keepIds -contains "$($_.id)" }
     $audioSummary = ($keptTracks | ForEach-Object { "$($_.codec)[$($_.properties.language)]" }) -join ", "
 
-    Write-Log ""
+    Write-Host ""
     Write-Log "=== DONE ==="
     Write-Log "Movie: $movieName"
     Write-Log "Audio: $audioSummary"
@@ -777,4 +777,5 @@ $($trackLines -join "`n")
     } else {
         Write-Log "Could not determine drive letter for eject."
     }
+    Write-Host ""
 } # end while

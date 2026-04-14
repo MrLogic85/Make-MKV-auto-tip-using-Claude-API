@@ -43,19 +43,19 @@ $mkvpropedit             = "C:\Program Files\MKVToolNix\mkvpropedit.exe"
 
 `$defaultDestRoots` is an array of destination paths:
 - **One entry** – used automatically without prompting
-- **Multiple entries** – a numbered list is shown at startup; press Enter to use the first one
+- **Multiple entries** – an arrow key menu is shown at startup; press Enter to confirm
 - **Empty** – script exits with an error
 
 > **Tip:** If your destination is a NAS, mount it as a network drive and add the drive letter to `$defaultDestRoots`. The script rips to local SSD first to avoid slow network writes during the MakeMKV step.
 
 ## Usage
 
-1. Insert the first Blu-ray disc
-2. Run the script from PowerShell:
+1. Run the script from PowerShell:
 ```powershell
 & '.\Rip MKV using Claude.ps1'
 ```
-3. Select the destination folder if multiple are configured
+2. Select the destination folder if multiple are configured
+3. Insert the first Blu-ray disc — the script waits for it automatically
 4. The script runs automatically – Claude identifies the movie, selects the best title and filters audio tracks
 5. If Claude cannot determine something with confidence you are prompted to select manually
 6. When done, the disc is ejected and the script waits for the next one
@@ -67,8 +67,9 @@ flowchart TD
     A([Start]) --> B[Select destination]
     B --> C
 
-    C[Scan for disc] --> D{Disc found?}
-    D -- No --> Z1([Exit])
+    C[Scan for disc] --> D{Disc readable?}
+    D -- No --> D1[Wait and retry]
+    D1 --> C
     D -- Yes --> E{Same disc as last rip?}
     E -- Yes --> Z2([Exit with warning])
     E -- No --> F[Claude: identify movie name]
@@ -97,8 +98,7 @@ flowchart TD
     N --> O[Create destination folder and NFO]
     O --> P[Start background copy job]
     P --> Q[Eject disc]
-    Q --> R[Wait for next disc]
-    R --> C
+    Q --> C
 
     P -. runs concurrently with next rip .-> S[/Copy MKV to destination/]
     S -. completes before next Step 4 .-> N

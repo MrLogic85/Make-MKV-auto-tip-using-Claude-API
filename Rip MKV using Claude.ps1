@@ -151,15 +151,29 @@ while ($true) {
         exit
     }
 
-    Write-Log "Disc found. Fetching title information..."
+    Write-Log "Disc found. Waiting for disc to become readable..."
 
-    # Extract disc name from CINFO
+    # Retry until the disc name is available (disc may still be spinning up)
     $discName = ""
-    foreach ($line in $infoOutput) {
-        if ($line -match '^CINFO:2,0,"([^"]+)"') {
-            $discName = $matches[1]
-            break
+    $retries  = 0
+    while (-not $discName -and $retries -lt 12) {
+        foreach ($line in $infoOutput) {
+            if ($line -match '^CINFO:2,0,"([^"]+)"') {
+                $discName = $matches[1]
+                break
+            }
         }
+        if (-not $discName) {
+            $retries++
+            Start-Sleep -Seconds 5
+            $infoOutput = & $makemkvcon -r info disc:0 2>&1
+        }
+    }
+
+    if ($discName) {
+        Write-Log "Disc ready: $discName"
+    } else {
+        Write-Log "Could not read disc name after retries. Proceeding anyway."
     }
 
     if ($discName -and $discName -eq $lastDiscName) {

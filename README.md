@@ -4,7 +4,8 @@ A PowerShell script that rips Blu-ray discs to MKV, intelligently selects the co
 
 ## Features
 
-- **Automatic movie identification** – reads disc metadata and uses Claude to identify the correct movie name and year matching [TMDB](https://www.themoviedb.org/)
+- **Automatic movie identification** – reads disc metadata, volume label, BDMV XML and cover thumbnails; uses Claude to identify the correct movie name and year matching [TMDB](https://www.themoviedb.org/)
+- **Edition detection** – Claude identifies special cuts (Director's Cut, Extended Edition, etc.) and writes the result to the NFO
 - **Intelligent title selection** – Claude picks the main feature based on runtime, file size, chapter count and resolution
 - **Smart audio filtering** – Claude selects audio tracks based on configured preferred languages and audio quality
 - **Native language preservation** – always keeps the film's original language even if not in the preferred list
@@ -12,6 +13,7 @@ A PowerShell script that rips Blu-ray discs to MKV, intelligently selects the co
 - **Local SSD temp storage** – rips to a local SSD first before copying to the destination, avoiding slow network write speeds
 - **Multi-disc loop** – ejects the disc after ripping and waits for the next one; exits if the same disc is re-inserted
 - **Background copy** – copies the finished MKV to the destination in the background while the next disc is already being ripped
+- **Audible alert** – optional double beep when manual input is required
 - **NFO source tag** – writes a minimal NFO for media managers like tinyMediaManager
 
 ## Requirements
@@ -32,6 +34,7 @@ $claudeApiKey            = "sk-ant-YOUR_KEY_HERE"
 $localTemp               = "C:\TempDir"
 $defaultDestRoots        = @("C:\Movies", "D:\Movies")
 $preferredAudioLanguages = @("eng", "swe")
+$beepOnManualInput       = $true
 $makemkvcon              = "C:\Program Files (x86)\MakeMKV\makemkvcon.exe"
 $mkvmerge                = "C:\Program Files\MKVToolNix\mkvmerge.exe"
 $mkvpropedit             = "C:\Program Files\MKVToolNix\mkvpropedit.exe"
@@ -67,15 +70,14 @@ flowchart TD
     A([Start]) --> B
     B[Select destination] --> C
     C[Scan for disc] --> F
-    F@{ shape: subprocess, label: "Claude: identify movie name" } --> F2
+    F@{ shape: subprocess, label: "Claude: identify movie, edition and title" } --> F2
     F2{Identified?}
-    F2 -- Yes --> G
+    F2 -- Yes --> F4
     F2 -- No --> F3
     F3@{ shape: sloped-rectangle, label: "Enter movie hint for Claude" } --> F
-    G@{ shape: subprocess, label: "Claude: select main title" } --> G2
-    G2{Selected?}
-    G2 -- Yes --> H
-    G2 -- No --> G3
+    F4{Title selected?}
+    F4 -- Yes --> H
+    F4 -- No --> G3
     G3@{ shape: sloped-rectangle, label: "Select title number" } --> H
     H@{ shape: subprocess, label: "MakeMKV: rip title to local SSD" } --> H2
     H2{Rip succeeded?}
@@ -118,6 +120,8 @@ Movies are saved as:
 <destRoot>\Movie Name (Year)\Movie Name (Year).nfo
 ```
 
+The NFO contains the source (`Blu-ray`) and edition if detected (e.g. `Director's Cut`).
+
 Compatible with [tinyMediaManager](https://www.tinymediamanager.org/) and media players like Zidoo that use NFO metadata.
 
 ## Notes
@@ -125,7 +129,7 @@ Compatible with [tinyMediaManager](https://www.tinymediamanager.org/) and media 
 - **MPEG-2 aspect ratio bug** – MakeMKV sometimes sets incorrect display dimensions for MPEG-2 video. The script detects near 1:1 aspect ratios and prompts you to pick the correct one.
 - **Rip failure** – if MakeMKV fails mid-rip, the partial file is removed, the disc is ejected, and you are prompted to retry (after cleaning the disc) or skip to the next disc.
 - **BD-Java warning** – some discs require Java for menus. This does not affect ripping and can be ignored.
-- **API cost** – each rip uses approximately 3 Claude API calls (name, title, audio). At current Sonnet pricing this costs a fraction of a cent per disc.
+- **API cost** – each rip uses approximately 2 Claude API calls (name+edition+title combined, then audio). At current Sonnet pricing this costs a fraction of a cent per disc.
 
 ## License
 

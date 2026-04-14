@@ -56,6 +56,7 @@ if ([string]::IsNullOrWhiteSpace($destRoot)) {
     $destRoot = $defaultDestRoot
 }
 
+$lastDiscName = $null
 while ($true) {
 $movieName = $null
 
@@ -78,6 +79,11 @@ foreach ($line in $infoOutput) {
         $discName = $matches[1]
         break
     }
+}
+
+if ($discName -and $discName -eq $lastDiscName) {
+    Write-Log "WARNING: Same disc detected ('$discName'). Please insert a different disc. Exiting."
+    exit
 }
 
 $namePrompt = @"
@@ -458,6 +464,8 @@ Write-Log "Audio: $audioSummary"
 Write-Log "Size: $fileSize GB"
 Write-Log "Location: $finalMkv"
 Write-Log "Log saved to: $logFile"
+
+$lastDiscName = $discName
 
 # Eject disc
 $driveLine = $driveFound | Select-Object -First 1

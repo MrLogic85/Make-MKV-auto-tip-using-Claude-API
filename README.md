@@ -86,8 +86,7 @@ flowchart TD
     H3 --> H4{Retry or skip?}
     H4 -- Retry --> H5[Wait for disc re-insert]
     H5 --> H
-    H4 -- Skip --> H6[Wait for next disc]
-    H6 --> C
+    H4 -- Skip --> Q
     I[MKVToolNix: identify audio tracks]
     I --> J[Claude: select audio tracks to keep]
     J --> K[MKVToolNix: filter audio tracks]

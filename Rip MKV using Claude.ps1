@@ -270,7 +270,7 @@ Please identify the movie and format it exactly as: Movie Name (Year)
 For example: The Dark Knight (2008)
 Make sure the name matches the title on https://www.themoviedb.org/
 
-Also identify the edition or version if this is a special cut of the film. Only specify an edition if you are confident it differs from the standard release. You must pick from this list:
+Also identify the edition or version if this is a special cut of the film. Only specify an edition if you are confident it differs from the standard release. You should preferably pick from this list:
 - Collectors Edition
 - Criterion Collection
 - Director's Cut

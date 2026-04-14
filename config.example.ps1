@@ -1,7 +1,7 @@
 # Copy this file to config.ps1 and fill in your values
 $claudeApiKey = "sk-ant-YOUR_KEY_HERE"
 $localTemp = "C:\TempDir"
-$defaultDestRoot = "C:\Movies"
+$defaultDestRoots = @("C:\Movies", "D:\Movies")
 $preferredAudioLanguages = @("eng", "swe")
 
 $makemkvcon = "C:\Program Files (x86)\MakeMKV\makemkvcon.exe"

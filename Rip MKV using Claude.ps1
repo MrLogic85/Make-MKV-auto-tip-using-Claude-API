@@ -60,11 +60,28 @@ function New-Title {
 if (-not (Test-Path $makemkvcon)) { Write-Log "Error: MakeMKV not found at $makemkvcon"; exit }
 if (-not (Test-Path $mkvmerge))   { Write-Log "Error: MKVToolNix not found at $mkvmerge"; exit }
 
-# Ask for destination once upfront
-Write-Host ""
-$destRoot = Read-Host "Enter destination folder (press Enter for $defaultDestRoot)"
-if ([string]::IsNullOrWhiteSpace($destRoot)) {
-    $destRoot = $defaultDestRoot
+# Select destination once upfront
+if ($defaultDestRoots.Count -eq 0) {
+    Write-Host "Error: No destinations configured. Please add at least one entry to `$defaultDestRoots in config.ps1."
+    exit
+} elseif ($defaultDestRoots.Count -eq 1) {
+    $destRoot = $defaultDestRoots[0]
+    Write-Log "Destination: $destRoot"
+} else {
+    Write-Host ""
+    Write-Host "Select destination:"
+    for ($i = 0; $i -lt $defaultDestRoots.Count; $i++) {
+        $marker = if ($i -eq 0) { " (default)" } else { "" }
+        Write-Host "  $($i + 1): $($defaultDestRoots[$i])$marker"
+    }
+    do {
+        $destChoice = Read-Host "Enter number (press Enter for 1)"
+        if ([string]::IsNullOrWhiteSpace($destChoice)) { $destChoice = "1" }
+        $isValid = $destChoice -match '^\d+$' -and [int]$destChoice -ge 1 -and [int]$destChoice -le $defaultDestRoots.Count
+        if (-not $isValid) { Write-Host "Please enter a number between 1 and $($defaultDestRoots.Count)." }
+    } while (-not $isValid)
+    $destRoot = $defaultDestRoots[[int]$destChoice - 1]
+    Write-Log "Destination: $destRoot"
 }
 
 $lastDiscName = $null

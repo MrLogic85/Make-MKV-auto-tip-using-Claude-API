@@ -28,7 +28,7 @@ A PowerShell script that rips a Blu-ray disc to MKV, intelligently selects the c
 ```powershell
 $claudeApiKey            = "sk-ant-YOUR_KEY_HERE"
 $localTemp               = "C:\TempDir"
-$defaultDestRoot         = "C:\Movies"
+$defaultDestRoots        = @("C:\Movies", "D:\Movies")
 $preferredAudioLanguages = @("eng", "swe")
 $makemkvcon              = "C:\Program Files (x86)\MakeMKV\makemkvcon.exe"
 $mkvmerge                = "C:\Program Files\MKVToolNix\mkvmerge.exe"

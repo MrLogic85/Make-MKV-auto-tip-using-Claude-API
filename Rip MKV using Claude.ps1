@@ -391,6 +391,11 @@ The formatting is important since I will parse your response with these regexes:
 Important: Do not use special Unicode characters like checkmarks or cross marks in your response. Use plain text only.
 "@
 
+        Write-Log "Sending to Claude: $($discInfoLines -join '; ')"
+        if ($bdmtXml)            { Write-Log "  + disc metadata XML" }
+        if ($titlesSection)      { Write-Log "  + $($titleLines.Count) titles" }
+        if ($discImages.Count)   { Write-Log "  + $($discImages.Count) image(s)" }
+        if ($userHint)           { Write-Log "  + user hint: $userHint" }
         Write-Log "Asking Claude to identify disc..."
         $claudeNameResponse = Invoke-Claude $namePrompt $discImages
         Write-Log "Claude name response: $claudeNameResponse"
@@ -456,7 +461,7 @@ Important: Do not use special Unicode characters like checkmarks or cross marks 
     # Select title via Claude
     # -------------------------------------------------------------------------
     Write-Log ""
-    Write-Log "Asking Claude to select best title..."
+    Write-Log "Asking Claude to select best title ($($titleLines.Count) titles)..."
     $titlePrompt = @"
 I am ripping the Blu-ray movie '$movieName'. Below are the available titles found on the disc. Please identify which title number is the main feature film. Consider the expected runtime of this movie and look for the title that best matches. Ignore bonus features, trailers, commentary tracks and short clips.
 
@@ -603,7 +608,7 @@ $($titleLines -join "`n")
     }
 
     Write-Log ""
-    Write-Log "Asking Claude to select audio tracks..."
+    Write-Log "Asking Claude to select audio tracks ($($mkvAudioTracks.Count) tracks, preferred languages: $($preferredAudioLanguages -join ', '))..."
     $langList    = $preferredAudioLanguages -join ", "
     $audioPrompt = @"
 I have an MKV file of the movie '$movieName' with the following audio tracks. Please select which track IDs to keep based on these rules:

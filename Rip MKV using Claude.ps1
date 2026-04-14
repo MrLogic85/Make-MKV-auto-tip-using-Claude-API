@@ -270,13 +270,27 @@ Please identify the movie and format it exactly as: Movie Name (Year)
 For example: The Dark Knight (2008)
 Make sure the name matches the title on https://www.themoviedb.org/
 
-Also identify the edition or version if this is a special cut of the film (e.g. "Director's Cut", "Extended Edition", "The Final Cut", "Theatrical Cut"). Only specify an edition if you are confident it differs from the standard release.
+Also identify the edition or version if this is a special cut of the film. Only specify an edition if you are confident it differs from the standard release. You must pick from this list:
+- Collectors Edition
+- Criterion Collection
+- Director's Cut
+- Extended Edition
+- Final Edition
+- IMAX
+- Open Matte
+- Remastered
+- Special Edition
+- Superduper Cut
+- Theatrical Edition
+- Ultimate Edition
+- Uncut
+- Unrated
 
 Return your answers on separate lines:
 NAME:Movie Name (Year)
 EDITION:edition name
 If you cannot identify the movie with confidence, return: NAME:UNKNOWN
-If this is the standard version or you cannot determine the edition, return: EDITION:NONE
+If this is the standard version, you cannot determine the edition, or none of the listed editions apply, return: EDITION:NONE
 The formatting is important since I will parse your response with these regexes: NAME:(.+) and EDITION:(.+)
 
 Important: Do not use special Unicode characters like checkmarks or cross marks in your response. Use plain text only.

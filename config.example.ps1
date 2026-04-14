@@ -3,6 +3,7 @@ $claudeApiKey = "sk-ant-YOUR_KEY_HERE"
 $localTemp = "C:\TempDir"
 $defaultDestRoots = @("C:\Movies", "D:\Movies")
 $preferredAudioLanguages = @("eng", "swe")
+$beepOnManualInput = $true
 
 $makemkvcon = "C:\Program Files (x86)\MakeMKV\makemkvcon.exe"
 $mkvmerge = "C:\Program Files\MKVToolNix\mkvmerge.exe"

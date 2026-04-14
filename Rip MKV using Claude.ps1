@@ -19,6 +19,10 @@ function Write-Log($message) {
     Add-Content -Path $logFile -Value $line
 }
 
+function Invoke-Beep {
+    if ($beepOnManualInput) { [Console]::Beep() }
+}
+
 function Invoke-Claude($prompt) {
     $body = @{
         model    = "claude-sonnet-4-6"
@@ -287,6 +291,7 @@ Important: Do not use special Unicode characters like checkmarks or cross marks 
     
         # Fall back to manual input if needed
         if (-not $movieName) {
+            Invoke-Beep
             Write-Host ""
             $discIdentifier = Read-Host "Enter movie hint for Claude"
         }
@@ -303,6 +308,7 @@ Important: Do not use special Unicode characters like checkmarks or cross marks 
 
     if (Test-Path $finalMkv) {
         Write-Log "WARNING: MKV already exists at $finalMkv"
+        Invoke-Beep
         $idx = Invoke-Menu -Title "File already exists. Overwrite?" -Options @("No, skip this disc", "Yes, overwrite") -Default 0
         if ($idx -ne 1) {
             Write-Log "Aborted by user."
@@ -412,6 +418,7 @@ $($titleLines -join "`n")
         Write-Log "Claude selected title: $chosenTitle"
     } else {
         Write-Log "Claude could not determine title. Please select manually."
+        Invoke-Beep
         $titleKeys   = @($titlesWithAudio | ForEach-Object { $_.Key })
         $idx         = Invoke-Menu -Title "Select title:" -Options $titleLines
         $chosenTitle = $titleKeys[$idx]
@@ -453,6 +460,7 @@ $($titleLines -join "`n")
                 $shell.Namespace(17).ParseName($driveLetter).InvokeVerb("Eject")
             }
 
+            Invoke-Beep
             $errIdx = Invoke-Menu `
                 -Title "Ripping failed. Please clean the disc and re-insert it." `
                 -Options @("Retry", "Skip to next disc")
@@ -571,6 +579,7 @@ $($trackLines -join "`n")
     }
 
     if (-not $keepIds) {
+        Invoke-Beep
         $defaults = @($true) * $mkvAudioTracks.Count
         $checked  = Invoke-MultiSelectMenu -Title "Select audio tracks to keep:" -Options $trackLines -Defaults $defaults
         $keepIds  = @()
@@ -617,6 +626,7 @@ $($trackLines -join "`n")
 
             if ($ratio -gt 0.9 -and $ratio -lt 1.1) {
                 Write-Log "WARNING: Display dimensions look wrong ($displayDim, nearly 1:1). Pixel dimensions are $pixelDim."
+                Invoke-Beep
                 $arIdx = Invoke-Menu `
                     -Title "Display dimensions look wrong ($displayDim, pixel: $pixelDim). Select aspect ratio:" `
                     -Options @(

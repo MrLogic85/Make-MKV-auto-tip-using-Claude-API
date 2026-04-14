@@ -188,16 +188,17 @@ while ($true) {
     # -------------------------------------------------------------------------
     Write-Log "Scanning for disc..."
 
-    $discName   = ""
-    $infoOutput = $null
-    $driveFound = $null
+    $discName    = ""
+    $infoOutput  = $null
+    $driveFound  = $null
+    $lastWaitMsg = ""
 
     while (-not $discName) {
         $infoOutput = & $makemkvcon -r info disc:0 2>&1
         $driveFound = $infoOutput | Where-Object { $_ -match '^DRV:0,' -and $_ -notmatch ',256,' }
 
         if (-not $driveFound) {
-            Write-Log "No disc found in drive 0. Waiting..."
+            if ($lastWaitMsg -ne "no-disc") { Write-Log "No disc found. Waiting..."; $lastWaitMsg = "no-disc" }
             Start-Sleep -Seconds 5
             continue
         }
@@ -207,7 +208,7 @@ while ($true) {
         }
 
         if (-not $discName) {
-            Write-Log "Disc found but not yet readable. Waiting..."
+            if ($lastWaitMsg -ne "not-readable") { Write-Log "Disc found but not yet readable. Waiting..."; $lastWaitMsg = "not-readable" }
             Start-Sleep -Seconds 5
         }
     }

@@ -64,23 +64,37 @@ $mkvpropedit             = "C:\Program Files\MKVToolNix\mkvpropedit.exe"
 
 ```mermaid
 flowchart TD
-    A[Start] --> B[Select destination]
-    B --> C[Insert disc]
-    C --> D[MakeMKV: identify disc and available titles]
-    D --> E[Claude API: identify movie name from disc metadata]
-    E --> F[Claude API: select main feature title]
-    F --> G[MakeMKV: rip selected title to local SSD]
-    G --> H[MKVToolNix: identify audio tracks in ripped MKV]
-    H --> I[Claude API: select audio tracks to keep]
-    I --> J[MKVToolNix: filter audio tracks]
-    J --> K{Aspect ratio OK?}
-    K -- No --> L[Prompt user to correct display dimensions]
-    L --> M[Copy to destination, write NFO]
-    K -- Yes --> M
-    M --> N[Copy MKV to destination in background]
-    N --> O[Eject disc]
-    O --> P[Wait for next disc]
-    P --> D
+    A([Start]) --> B[Select destination]
+    B --> C
+
+    C[Scan for disc] --> D{Disc found?}
+    D -- No --> Z1([Exit])
+    D -- Yes --> E{Same disc as last rip?}
+    E -- Yes --> Z2([Exit with warning])
+    E -- No --> F[Claude: identify movie name]
+    F --> F2{Identified?}
+    F2 -- No --> F3[Prompt: enter movie name]
+    F3 --> G
+    F2 -- Yes --> G[Claude: select main title]
+    G --> G2{Selected?}
+    G2 -- No --> G3[Prompt: enter title number]
+    G3 --> H
+    G2 -- Yes --> H[MakeMKV: rip title to local SSD]
+    H --> I[MKVToolNix: identify audio tracks]
+    I --> J[Claude: select audio tracks to keep]
+    J --> K[MKVToolNix: filter audio tracks]
+    K --> L{Aspect ratio near 1:1?}
+    L -- Yes --> M[Prompt: correct display dimensions]
+    M --> N
+    L -- No --> N[Wait for previous copy job]
+    N --> O[Create destination folder and NFO]
+    O --> P[Start background copy job]
+    P --> Q[Eject disc]
+    Q --> R[Wait for next disc]
+    R --> C
+
+    P -. runs concurrently with next rip .-> S[/Copy MKV to destination/]
+    S -. completes before next Step 4 .-> N
 ```
 
 ## Audio selection rules

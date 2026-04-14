@@ -187,39 +187,32 @@ while ($true) {
     # Find disc
     # -------------------------------------------------------------------------
     Write-Log "Scanning for disc..."
-    $infoOutput = & $makemkvcon -r info disc:0 2>&1
-    $driveFound = $infoOutput | Where-Object { $_ -match '^DRV:0,' -and $_ -notmatch ',256,' }
 
-    if (-not $driveFound) {
-        Write-Log "Error: No disc found in drive 0. Please insert disc and try again."
-        Wait-CopyJob
-        exit
-    }
+    $discName   = ""
+    $infoOutput = $null
+    $driveFound = $null
 
-    Write-Log "Disc found. Waiting for disc to become readable..."
+    while (-not $discName) {
+        $infoOutput = & $makemkvcon -r info disc:0 2>&1
+        $driveFound = $infoOutput | Where-Object { $_ -match '^DRV:0,' -and $_ -notmatch ',256,' }
 
-    # Retry until the disc name is available (disc may still be spinning up)
-    $discName = ""
-    $retries  = 0
-    while (-not $discName -and $retries -lt 12) {
-        foreach ($line in $infoOutput) {
-            if ($line -match '^CINFO:2,0,"([^"]+)"') {
-                $discName = $matches[1]
-                break
-            }
-        }
-        if (-not $discName) {
-            $retries++
+        if (-not $driveFound) {
+            Write-Log "No disc found in drive 0. Waiting..."
             Start-Sleep -Seconds 5
-            $infoOutput = & $makemkvcon -r info disc:0 2>&1
+            continue
+        }
+
+        foreach ($line in $infoOutput) {
+            if ($line -match '^CINFO:2,0,"([^"]+)"') { $discName = $matches[1]; break }
+        }
+
+        if (-not $discName) {
+            Write-Log "Disc found but not yet readable. Waiting..."
+            Start-Sleep -Seconds 5
         }
     }
 
-    if ($discName) {
-        Write-Log "Disc ready: $discName"
-    } else {
-        Write-Log "Could not read disc name after retries. Proceeding anyway."
-    }
+    Write-Log "Disc ready: $discName"
 
     if ($discName -and $discName -eq $lastDiscName) {
         Write-Log "WARNING: Same disc detected ('$discName'). Please insert a different disc. Exiting."
@@ -715,7 +708,7 @@ $($trackLines -join "`n")
         Write-Log "Could not determine drive letter for eject."
     }
 
-    # Wait for drive to go empty first, then wait for a new disc
+    # Wait for drive to go empty before looping back to disc scan
     Write-Host ""
     Write-Log "Waiting for disc to eject..."
     do {
@@ -723,13 +716,5 @@ $($trackLines -join "`n")
         $pollOutput = & $makemkvcon -r info disc:0 2>&1
         $driveEmpty = $pollOutput | Where-Object { $_ -match '^DRV:0,' -and $_ -match ',256,' }
     } while (-not $driveEmpty)
-
-    Write-Log "Waiting for next disc..."
-    do {
-        Start-Sleep -Seconds 5
-        $pollOutput = & $makemkvcon -r info disc:0 2>&1
-        $discReady  = $pollOutput | Where-Object { $_ -match '^DRV:0,' -and $_ -notmatch ',256,' }
-    } while (-not $discReady)
-    Write-Log "New disc detected."
 
 } # end while

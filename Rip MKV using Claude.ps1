@@ -724,17 +724,8 @@ $($trackLines -join "`n")
         Write-Log "Ejecting disc ($driveLetter)..."
         $shell = New-Object -ComObject Shell.Application
         $shell.Namespace(17).ParseName($driveLetter).InvokeVerb("Eject")
+        Start-Sleep -Seconds 2
     } else {
         Write-Log "Could not determine drive letter for eject."
     }
-
-    # Wait for drive to go empty before looping back to disc scan
-    Write-Host ""
-    Write-Log "Waiting for disc to eject..."
-    do {
-        Start-Sleep -Seconds 2
-        $pollOutput = & $makemkvcon -r info disc:0 2>&1
-        $driveEmpty = $pollOutput | Where-Object { $_ -match '^DRV:0,' -and $_ -match ',256,' }
-    } while (-not $driveEmpty)
-
 } # end while

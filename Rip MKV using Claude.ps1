@@ -215,6 +215,8 @@ while ($true) {
 
     Write-Log "Disc ready: $discName"
 
+    $driveLetter = if (($driveFound | Select-Object -First 1) -match '"([A-Z]:)"') { $matches[1] } else { $null }
+
     if ($discName -and $discName -eq $lastDiscName) {
         Write-Log "WARNING: Same disc detected ('$discName'). Please insert a different disc. Exiting."
         Wait-CopyJob
@@ -224,6 +226,18 @@ while ($true) {
     # -------------------------------------------------------------------------
     # Identify movie name via Claude
     # -------------------------------------------------------------------------
+
+    # Try to read human-readable title from the standard Blu-ray metadata file
+    $bdmtTitle = $null
+    if ($driveLetter) {
+        $bdmtPath = Join-Path $driveLetter "BDMV\META\DL\bdmt_eng.xml"
+        if (Test-Path $bdmtPath) {
+            $bdmtXml = [xml](Get-Content $bdmtPath -Encoding UTF8 -ErrorAction SilentlyContinue)
+            $bdmtTitle = $bdmtXml.disclib.discinfo.title.name
+            if (-not $bdmtTitle) { $bdmtTitle = $bdmtXml.disclib.discinfo.name }
+            if ($bdmtTitle) { Write-Log "Disc metadata title: $bdmtTitle" }
+        }
+    }
 
     # Extract title durations and sizes from disc info to help Claude identify the movie
     $discTitleSummary = @()
@@ -244,8 +258,10 @@ while ($true) {
         "`n`nDisc titles:`n" + ($discTitleSummary -join "`n")
     } else { "" }
 
+    $discIdentifier = if ($bdmtTitle) { $bdmtTitle } else { $discName }
+
     $namePrompt = @"
-The following is a Blu-ray disc name: "$discName"$discTitleSection
+The following is a Blu-ray disc identifier: "$discIdentifier"$discTitleSection
 
 Please identify the movie and format it exactly as: Movie Name (Year)
 For example: The Dark Knight (2008)
@@ -444,8 +460,6 @@ $($titleLines -join "`n")
             }
 
             # Eject the disc
-            $driveLine   = $driveFound | Select-Object -First 1
-            $driveLetter = if ($driveLine -match '"([A-Z]:)"') { $matches[1] } else { $null }
             if ($driveLetter) {
                 Write-Log "Ejecting disc ($driveLetter)..."
                 $shell = New-Object -ComObject Shell.Application
@@ -719,8 +733,6 @@ $($trackLines -join "`n")
     # -------------------------------------------------------------------------
     # Eject disc and wait for next
     # -------------------------------------------------------------------------
-    $driveLine   = $driveFound | Select-Object -First 1
-    $driveLetter = if ($driveLine -match '"([A-Z]:)"') { $matches[1] } else { $null }
     if ($driveLetter) {
         Write-Log "Ejecting disc ($driveLetter)..."
         $shell = New-Object -ComObject Shell.Application

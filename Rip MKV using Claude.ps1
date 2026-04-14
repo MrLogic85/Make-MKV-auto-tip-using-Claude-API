@@ -279,16 +279,17 @@ while ($true) {
 
     if ($volumeLabel) { Write-Log "Drive volume label: $volumeLabel" }
 
-    do {
-        Write-Log "Asking Claude to identify disc..."
+    $discInfoLines = @("MakeMKV disc name: $discName")
+    if ($volumeLabel) { $discInfoLines += "Drive volume label: $volumeLabel" }
+    $bdmtSection   = if ($bdmtXml) { "`n`nDisc metadata XML:`n$bdmtXml" } else { "" }
+    $userHint      = $null
 
-        $discInfoLines  = @("MakeMKV disc name: $discName")
-        if ($volumeLabel) { $discInfoLines += "Drive volume label: $volumeLabel" }
-        $bdmtSection    = if ($bdmtXml) { "`n`nDisc metadata XML:`n$bdmtXml" } else { "" }
+    do {
+        $hintSection = if ($userHint) { "`n`nAdditional hint from user: $userHint" } else { "" }
 
         $namePrompt = @"
 The following information was collected from a Blu-ray disc:
-$($discInfoLines -join "`n")$bdmtSection
+$($discInfoLines -join "`n")$bdmtSection$hintSection
 
 Please identify the movie and format it exactly as: Movie Name (Year)
 For example: The Dark Knight (2008)
@@ -320,6 +321,7 @@ The formatting is important since I will parse your response with these regexes:
 Important: Do not use special Unicode characters like checkmarks or cross marks in your response. Use plain text only.
 "@
 
+        Write-Log "Asking Claude to identify disc..."
         $claudeNameResponse = Invoke-Claude $namePrompt $discImages
         Write-Log "Claude name response: $claudeNameResponse"
 
@@ -354,12 +356,11 @@ Important: Do not use special Unicode characters like checkmarks or cross marks 
         } else {
             Write-Log "Claude returned unexpected response for movie name."
         }
-    
-        # Fall back to manual input if needed
+
         if (-not $movieName) {
             Invoke-Beep
             Write-Host ""
-            $discIdentifier = Read-Host "Enter movie hint for Claude"
+            $userHint = Read-Host "Enter movie hint for Claude"
         }
     } while (-not $movieName)
 

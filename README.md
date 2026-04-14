@@ -71,12 +71,12 @@ flowchart TD
     F2{Identified?}
     F2 -- Yes --> G
     F2 -- No --> F3
-    F3[/Enter movie hint for Claude/] --> F
+    F3@{ shape: sloped-rectangle, label: "Enter movie hint for Claude" } --> F
     G[Claude: select main title] --> G2
     G2{Selected?}
     G2 -- Yes --> H
     G2 -- No --> G3
-    G3[/Select title number/] --> H
+    G3@{ shape: sloped-rectangle, label: "Select title number" } --> H
     H[MakeMKV: rip title to local SSD] --> H2
     H2{Rip succeeded?}
     H2 -- Yes --> I
@@ -88,18 +88,18 @@ flowchart TD
 	J2{Selected?}
     J2 -- Yes --> K
     J2 -- No --> J3
-    J3[/Select audio tracks/] --> K
+    J3@{ shape: sloped-rectangle, label: "Select audio tracks" } --> K
     K[MKVToolNix: filter audio tracks]
     K --> L
 	L{Check aspect ratio}
     L -- Correct --> N
     L -- Incorrect --> M
-    M[/Correct display dimensions/] --> N
+    M@{ shape: sloped-rectangle, label: "Correct display dimensions" } --> N
     N[Wait for previous copy job] --> O
     O[Create destination folder and NFO] --> P
     P[Start background copy job] .-> S
     P --> Q
-	S[/Copy MKV to destination/] .-> N
+	S@{ shape: sloped-rectangle, label: "Copy MKV to destination" } .-> N
     Q[Eject disc] --> C
 ```
 

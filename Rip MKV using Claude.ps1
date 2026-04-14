@@ -470,4 +470,14 @@ if ($driveLetter) {
     Write-Log "Could not determine drive letter for eject."
 }
 
+# Wait for new disc
+Write-Host ""
+Write-Log "Waiting for next disc..."
+do {
+    Start-Sleep -Seconds 5
+    $pollOutput = & $makemkvcon -r info disc:0 2>&1
+    $discReady = $pollOutput | Where-Object { $_ -match '^DRV:0,' -and $_ -notmatch ',256,' }
+} while (-not $discReady)
+Write-Log "New disc detected."
+
 } # end while

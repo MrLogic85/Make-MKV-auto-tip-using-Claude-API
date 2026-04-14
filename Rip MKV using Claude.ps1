@@ -263,6 +263,7 @@ while ($true) {
     } else { "" }
 
     $discIdentifier = if ($bdmtTitle) { $bdmtTitle } else { $discName }
+    Write-Log "Asking Claude to identify: $discIdentifier"
 
     $namePrompt = @"
 The following is a Blu-ray disc identifier: "$discIdentifier"$discTitleSection

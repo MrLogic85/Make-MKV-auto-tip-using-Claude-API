@@ -251,6 +251,75 @@ while ($true) {
     }
 
     # -------------------------------------------------------------------------
+    # Parse titles from disc info
+    # -------------------------------------------------------------------------
+    $titles = @{}
+
+    foreach ($line in $infoOutput) {
+        if ($line -match '^TINFO:(\d+),11,0,"(\d+)"') {
+            $tNum = [int]$matches[1]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            $titles[$tNum].Size     = [long]$matches[2]
+            $titles[$tNum].SizeText = [math]::Round([long]$matches[2] / 1GB, 2).ToString() + " GB"
+        }
+        if ($line -match '^TINFO:(\d+),9,0,"([^"]+)"') {
+            $tNum = [int]$matches[1]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            $titles[$tNum].Duration = $matches[2]
+        }
+        if ($line -match '^TINFO:(\d+),25,0,"(\d+)"') {
+            $tNum = [int]$matches[1]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            $titles[$tNum].ChapterCount = [int]$matches[2]
+        }
+        if ($line -match '^SINFO:(\d+),0,7,0,"([^"]+)"') {
+            $tNum = [int]$matches[1]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            $titles[$tNum].VideoCodec = $matches[2]
+        }
+        if ($line -match '^SINFO:(\d+),0,19,0,"([^"]+)"') {
+            $tNum = [int]$matches[1]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            $titles[$tNum].Resolution = $matches[2]
+        }
+        if ($line -match '^SINFO:(\d+),(\d+),1,6202,"Audio"') {
+            $tNum     = [int]$matches[1]
+            $trackNum = [int]$matches[2]
+            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
+            if (-not $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
+                $titles[$tNum].AudioTracks[$trackNum] = @{ TrackNum = $trackNum; ShortName = ""; Language = "" }
+                $titles[$tNum].AudioTrackNums += $trackNum
+            }
+        }
+        if ($line -match '^SINFO:(\d+),(\d+),6,0,"([^"]+)"') {
+            $tNum     = [int]$matches[1]
+            $trackNum = [int]$matches[2]
+            if ($titles.ContainsKey($tNum) -and $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
+                $titles[$tNum].AudioTracks[$trackNum].ShortName = $matches[3]
+            }
+        }
+        if ($line -match '^SINFO:(\d+),(\d+),3,0,"([a-z]{3})"') {
+            $tNum     = [int]$matches[1]
+            $trackNum = [int]$matches[2]
+            if ($titles.ContainsKey($tNum) -and $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
+                $titles[$tNum].AudioTracks[$trackNum].Language = $matches[3]
+            }
+        }
+    }
+
+    Write-Log "Available titles:"
+    $titleLines      = @()
+    $titlesWithAudio = $titles.GetEnumerator() | Where-Object { $_.Value.AudioTracks.Count -gt 0 } | Sort-Object Key
+    foreach ($t in $titlesWithAudio) {
+        $audioList  = ($t.Value.AudioTrackNums |
+            ForEach-Object { $t.Value.AudioTracks[$_] } |
+            ForEach-Object { "$($_.ShortName)[$($_.Language)]" }) -join ", "
+        Write-Log "  Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters"
+        Write-Log "    Audio: $audioList"
+        $titleLines += "Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters, Audio: $audioList"
+    }
+
+    # -------------------------------------------------------------------------
     # Identify movie name via Claude
     # -------------------------------------------------------------------------
 
@@ -282,6 +351,7 @@ while ($true) {
     $discInfoLines = @("MakeMKV disc name: $discName")
     if ($volumeLabel) { $discInfoLines += "Drive volume label: $volumeLabel" }
     $bdmtSection   = if ($bdmtXml) { "`n`nDisc metadata XML:`n$bdmtXml" } else { "" }
+    $titlesSection = if ($titleLines.Count -gt 0) { "`n`nDisc titles:`n" + ($titleLines -join "`n") } else { "" }
     $userHint      = $null
 
     do {
@@ -289,7 +359,7 @@ while ($true) {
 
         $namePrompt = @"
 The following information was collected from a Blu-ray disc:
-$($discInfoLines -join "`n")$bdmtSection$hintSection
+$($discInfoLines -join "`n")$bdmtSection$titlesSection$hintSection
 
 Please identify the movie and format it exactly as: Movie Name (Year)
 For example: The Dark Knight (2008)
@@ -383,78 +453,8 @@ Important: Do not use special Unicode characters like checkmarks or cross marks 
     }
 
     # -------------------------------------------------------------------------
-    # Parse titles from disc info
-    # -------------------------------------------------------------------------
-    $titles = @{}
-
-    foreach ($line in $infoOutput) {
-        if ($line -match '^TINFO:(\d+),11,0,"(\d+)"') {
-            $tNum = [int]$matches[1]
-            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-            $titles[$tNum].Size     = [long]$matches[2]
-            $titles[$tNum].SizeText = [math]::Round([long]$matches[2] / 1GB, 2).ToString() + " GB"
-        }
-        if ($line -match '^TINFO:(\d+),9,0,"([^"]+)"') {
-            $tNum = [int]$matches[1]
-            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-            $titles[$tNum].Duration = $matches[2]
-        }
-        if ($line -match '^TINFO:(\d+),25,0,"(\d+)"') {
-            $tNum = [int]$matches[1]
-            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-            $titles[$tNum].ChapterCount = [int]$matches[2]
-        }
-        if ($line -match '^SINFO:(\d+),0,7,0,"([^"]+)"') {
-            $tNum = [int]$matches[1]
-            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-            $titles[$tNum].VideoCodec = $matches[2]
-        }
-        if ($line -match '^SINFO:(\d+),0,19,0,"([^"]+)"') {
-            $tNum = [int]$matches[1]
-            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-            $titles[$tNum].Resolution = $matches[2]
-        }
-        if ($line -match '^SINFO:(\d+),(\d+),1,6202,"Audio"') {
-            $tNum     = [int]$matches[1]
-            $trackNum = [int]$matches[2]
-            if (-not $titles.ContainsKey($tNum)) { $titles[$tNum] = New-Title }
-            if (-not $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
-                $titles[$tNum].AudioTracks[$trackNum] = @{ TrackNum = $trackNum; ShortName = ""; Language = "" }
-                $titles[$tNum].AudioTrackNums += $trackNum
-            }
-        }
-        if ($line -match '^SINFO:(\d+),(\d+),6,0,"([^"]+)"') {
-            $tNum     = [int]$matches[1]
-            $trackNum = [int]$matches[2]
-            if ($titles.ContainsKey($tNum) -and $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
-                $titles[$tNum].AudioTracks[$trackNum].ShortName = $matches[3]
-            }
-        }
-        if ($line -match '^SINFO:(\d+),(\d+),3,0,"([a-z]{3})"') {
-            $tNum     = [int]$matches[1]
-            $trackNum = [int]$matches[2]
-            if ($titles.ContainsKey($tNum) -and $titles[$tNum].AudioTracks.ContainsKey($trackNum)) {
-                $titles[$tNum].AudioTracks[$trackNum].Language = $matches[3]
-            }
-        }
-    }
-
-    # -------------------------------------------------------------------------
     # Select title via Claude
     # -------------------------------------------------------------------------
-    Write-Log ""
-    Write-Log "Available titles:"
-    $titleLines = @()
-    $titlesWithAudio = $titles.GetEnumerator() | Where-Object { $_.Value.AudioTracks.Count -gt 0 } | Sort-Object Key
-    foreach ($t in $titlesWithAudio) {
-        $audioList = ($t.Value.AudioTrackNums |
-            ForEach-Object { $t.Value.AudioTracks[$_] } |
-            ForEach-Object { "$($_.ShortName)[$($_.Language)]" }) -join ", "
-        Write-Log "  Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters"
-        Write-Log "    Audio: $audioList"
-        $titleLines += "Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters, Audio: $audioList"
-    }
-
     Write-Log ""
     Write-Log "Asking Claude to select best title..."
     $titlePrompt = @"

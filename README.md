@@ -1,6 +1,11 @@
 # Rip MKV using Claude
 
-A PowerShell script that rips Blu-ray discs to MKV, intelligently selects the correct title and audio tracks using the Claude API, and copies the result to any destination folder. Supports back-to-back ripping — ejects each disc when done and waits for the next one automatically.
+Two PowerShell scripts for ripping Blu-ray content to MKV. Both use the Claude API to identify movies, select the best title and filter audio tracks. Shared logic lives in `common.ps1` which is dot-sourced by both scripts.
+
+| Script | Source |
+|---|---|
+| `Rip MKV using Claude.ps1` | Physical disc in a drive |
+| `Rip MKV from Folder.ps1` | Pre-ripped BDMV folder tree |
 
 ## Features
 
@@ -11,8 +16,7 @@ A PowerShell script that rips Blu-ray discs to MKV, intelligently selects the co
 - **Native language preservation** – always keeps the film's original language even if not in the preferred list
 - **Aspect ratio check** – detects broken display dimensions (e.g. 1:1 square video) and prompts for correction
 - **Local SSD temp storage** – rips to a local SSD first before copying to the destination, avoiding slow network write speeds
-- **Multi-disc loop** – ejects the disc after ripping and waits for the next one; exits if the same disc is re-inserted
-- **Background copy** – copies the finished MKV to the destination in the background while the next disc is already being ripped
+- **Background copy** – copies the finished MKV to the destination in the background while the next title is already being ripped
 - **Audible alert** – optional double beep when manual input is required
 - **NFO source tag** – writes a minimal NFO for media managers like tinyMediaManager
 
@@ -33,6 +37,7 @@ A PowerShell script that rips Blu-ray discs to MKV, intelligently selects the co
 $claudeApiKey            = "sk-ant-YOUR_KEY_HERE"
 $localTemp               = "C:\TempDir"
 $defaultDestRoots        = @("C:\Movies", "D:\Movies")
+$defaultSourceRoots      = @("C:\BDMVRips")      # folder script only
 $preferredAudioLanguages = @("eng", "swe")
 $beepOnManualInput       = $true
 $makemkvcon              = "C:\Program Files (x86)\MakeMKV\makemkvcon.exe"
@@ -51,7 +56,17 @@ $mkvpropedit             = "C:\Program Files\MKVToolNix\mkvpropedit.exe"
 
 > **Tip:** If your destination is a NAS, mount it as a network drive and add the drive letter to `$defaultDestRoots`. The script rips to local SSD first to avoid slow network writes during the MakeMKV step.
 
+### Source folders (folder script only)
+
+`$defaultSourceRoots` is an array of paths that contain BDMV subfolders:
+- **One entry** – used automatically without prompting
+- **Multiple entries** – an arrow key menu is shown at startup
+
+Each immediate subfolder of the selected root that contains a `BDMV\` directory is treated as one disc to process.
+
 ## Usage
+
+### Disc script
 
 1. Run the script from PowerShell:
 ```powershell
@@ -63,7 +78,20 @@ $mkvpropedit             = "C:\Program Files\MKVToolNix\mkvpropedit.exe"
 5. If Claude cannot determine something with confidence you are prompted to select manually
 6. When done, the disc is ejected and the script waits for the next one
 
+### Folder script
+
+1. Run the script from PowerShell:
+```powershell
+& '.\Rip MKV from Folder.ps1'
+```
+2. Select the source and destination folders if multiple are configured
+3. The script processes each BDMV subfolder in order — Claude identifies the movie, selects the best title and filters audio tracks
+4. Each source folder is deleted after its MKV has been successfully copied to the destination
+5. If a copy fails the source folder is left intact
+
 ## Workflow
+
+### Disc script
 
 ```mermaid
 flowchart TD
@@ -103,6 +131,58 @@ flowchart TD
     Q[Eject disc] --> C
 ```
 
+### Folder script
+
+```mermaid
+flowchart TD
+    A([Start]) --> B
+    B[Select source and destination] --> C
+    C[Scan source for BDMV subfolders] --> D
+    D{More folders?}
+    D -- No --> Z
+    D -- Yes --> E
+    E[Wait for previous copy job] --> E2
+    E2{Copy succeeded?}
+    E2 -- Yes --> E3
+    E2 -- No --> F
+    E3[Delete previous source folder] --> F
+    F@{ shape: subprocess, label: "makemkvcon: read title info from folder" } --> G
+    G@{ shape: subprocess, label: "Claude: identify movie, edition and title" } --> G2
+    G2{Identified?}
+    G2 -- Yes --> G4
+    G2 -- No --> G3
+    G3@{ shape: sloped-rectangle, label: "Enter movie hint for Claude" } --> G
+    G4{Title selected?}
+    G4 -- Yes --> H
+    G4 -- No --> G5
+    G5@{ shape: sloped-rectangle, label: "Select title number" } --> H
+    H@{ shape: subprocess, label: "MakeMKV: rip title to local SSD" } --> H2
+    H2{Rip succeeded?}
+    H2 -- Yes --> I
+    H2 -- No --> D
+    I@{ shape: subprocess, label: "MKVToolNix: identify audio tracks" } --> J
+    J@{ shape: subprocess, label: "Claude: select audio tracks to keep" } --> J2
+    J2{Selected?}
+    J2 -- Yes --> K
+    J2 -- No --> J3
+    J3@{ shape: sloped-rectangle, label: "Select audio tracks" } --> K
+    K@{ shape: subprocess, label: "MKVToolNix: filter audio tracks" } --> L
+    L{Check aspect ratio}
+    L -- Correct --> N
+    L -- Incorrect --> M
+    M@{ shape: sloped-rectangle, label: "Correct display dimensions" } --> N
+    N[Create destination folder and NFO] --> P
+    P[Start background copy job] -.-> S
+    P --> D
+    S@{ shape: lin-cyl, label: "Copy MKV to destination" }
+    Z[Wait for last copy job] --> Z2
+    Z2{Copy succeeded?}
+    Z2 -- Yes --> Z3
+    Z2 -- No --> ZEnd
+    Z3[Delete last source folder] --> ZEnd
+    ZEnd([Done])
+```
+
 ## Audio selection rules
 
 Claude applies these rules when selecting audio tracks:
@@ -127,7 +207,8 @@ Compatible with [tinyMediaManager](https://www.tinymediamanager.org/) and media 
 ## Notes
 
 - **MPEG-2 aspect ratio bug** – MakeMKV sometimes sets incorrect display dimensions for MPEG-2 video. The script detects near 1:1 aspect ratios and prompts you to pick the correct one.
-- **Rip failure** – if MakeMKV fails mid-rip, the partial file is removed, the disc is ejected, and you are prompted to retry (after cleaning the disc) or skip to the next disc.
+- **Rip failure (disc)** – if MakeMKV fails mid-rip, the partial file is removed, the disc is ejected, and you are prompted to retry (after cleaning the disc) or skip to the next disc.
+- **Rip failure (folder)** – if MakeMKV fails, the partial file is removed and the script skips to the next folder.
 - **BD-Java warning** – some discs require Java for menus. This does not affect ripping and can be ignored.
 - **API cost** – each rip uses approximately 2 Claude API calls (name+edition+title combined, then audio). At current Sonnet pricing this costs a fraction of a cent per disc.
 

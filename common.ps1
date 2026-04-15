@@ -21,6 +21,51 @@ function Select-Destination {
     return $path
 }
 
+# Logs all titles with audio and builds the title lines array used by Claude and menus.
+# Returns @{ TitleLines = <string[]>; TitlesWithAudio = <ordered entries> }
+function Get-TitleLines($titles) {
+    Write-Log "Available titles:"
+    $titleLines      = @()
+    $titlesWithAudio = $titles.GetEnumerator() | Where-Object { $_.Value.AudioTracks.Count -gt 0 } | Sort-Object Key
+    foreach ($t in $titlesWithAudio) {
+        $audioList  = ($t.Value.AudioTrackNums |
+            ForEach-Object { $t.Value.AudioTracks[$_] } |
+            ForEach-Object { "$($_.ShortName)[$($_.Language)]" }) -join ", "
+        Write-Log "  Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters"
+        Write-Log "    Audio: $audioList"
+        $titleLines += "Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters, Audio: $audioList"
+    }
+    return @{
+        TitleLines      = $titleLines
+        TitlesWithAudio = $titlesWithAudio
+    }
+}
+
+# Returns the chosen title number from Claude's suggestion or a manual menu fallback.
+function Select-Title($id, $titleLines, $titlesWithAudio) {
+    if ($id.TitleNum -ne $null) {
+        Write-Log "Claude selected title: $($id.TitleNum)"
+        return $id.TitleNum
+    }
+    Write-Log "Claude could not determine title. Please select manually."
+    $titleKeys   = @($titlesWithAudio | ForEach-Object { $_.Key })
+    $idx         = Invoke-Menu -Title "Select title:" -Options $titleLines
+    return $titleKeys[$idx]
+}
+
+# Logs the final DONE summary after a successful rip.
+function Write-DoneSummary($audioResult, $movieName, $finalMkv) {
+    $keptTracks   = $audioResult.AudioTracks | Where-Object { $audioResult.KeepIds -contains "$($_.id)" }
+    $audioSummary = ($keptTracks | ForEach-Object { "$($_.codec)[$($_.properties.language)]" }) -join ", "
+
+    Write-Host ""
+    Write-Log "=== DONE ==="
+    Write-Log "Movie: $movieName"
+    Write-Log "Audio: $audioSummary"
+    Write-Log "Location: $finalMkv"
+    Write-Log "Log saved to: $logFile"
+}
+
 function Write-Log($message) {
     $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $line = "[$timestamp] $message"

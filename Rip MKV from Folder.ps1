@@ -61,17 +61,9 @@ foreach ($folder in $bdmvFolders) {
 
     $titles = Invoke-ParseTitles $infoOutput
 
-    Write-Log "Available titles:"
-    $titleLines      = @()
-    $titlesWithAudio = $titles.GetEnumerator() | Where-Object { $_.Value.AudioTracks.Count -gt 0 } | Sort-Object Key
-    foreach ($t in $titlesWithAudio) {
-        $audioList  = ($t.Value.AudioTrackNums |
-            ForEach-Object { $t.Value.AudioTracks[$_] } |
-            ForEach-Object { "$($_.ShortName)[$($_.Language)]" }) -join ", "
-        Write-Log "  Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters"
-        Write-Log "    Audio: $audioList"
-        $titleLines += "Title $($t.Key): $($t.Value.VideoCodec), $($t.Value.Duration), $($t.Value.SizeText), $($t.Value.Resolution), $($t.Value.ChapterCount) chapters, Audio: $audioList"
-    }
+    $tl              = Get-TitleLines $titles
+    $titleLines      = $tl.TitleLines
+    $titlesWithAudio = $tl.TitlesWithAudio
 
     # -------------------------------------------------------------------------
     # Read disc metadata from folder
@@ -122,15 +114,7 @@ foreach ($folder in $bdmvFolders) {
     # -------------------------------------------------------------------------
     # Select title
     # -------------------------------------------------------------------------
-    if ($id.TitleNum -ne $null) {
-        $chosenTitle = $id.TitleNum
-        Write-Log "Claude selected title: $chosenTitle"
-    } else {
-        Write-Log "Claude could not determine title. Please select manually."
-        $titleKeys   = @($titlesWithAudio | ForEach-Object { $_.Key })
-        $idx         = Invoke-Menu -Title "Select title:" -Options $titleLines
-        $chosenTitle = $titleKeys[$idx]
-    }
+    $chosenTitle = Select-Title $id $titleLines $titlesWithAudio
 
     # -------------------------------------------------------------------------
     # Step 1: Rip from folder
@@ -181,15 +165,7 @@ foreach ($folder in $bdmvFolders) {
         Write-Log "Copy failed; source folder retained: $filePath"
     }
 
-    $keptTracks   = $audioResult.AudioTracks | Where-Object { $audioResult.KeepIds -contains "$($_.id)" }
-    $audioSummary = ($keptTracks | ForEach-Object { "$($_.codec)[$($_.properties.language)]" }) -join ", "
-
-    Write-Host ""
-    Write-Log "=== DONE ==="
-    Write-Log "Movie: $movieName"
-    Write-Log "Audio: $audioSummary"
-    Write-Log "Location: $finalMkv"
-    Write-Log "Log saved to: $logFile"
+    Write-DoneSummary $audioResult $movieName $finalMkv
 
 } # end foreach
 

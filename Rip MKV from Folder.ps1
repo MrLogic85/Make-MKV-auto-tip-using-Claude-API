@@ -90,7 +90,7 @@ foreach ($folder in $bdmvFolders) {
     # -------------------------------------------------------------------------
     # Identify movie via Claude
     # -------------------------------------------------------------------------
-    $discInfoLines = @("Folder name (likely already Movie Name (Year)): $($folder.Name)")
+    $discInfoLines = @("Folder name: $($folder.Name)")
 
     $id           = Invoke-IdentifyMovie $discInfoLines $bdmtXml $titleLines $discImages
     $movieName    = $id.Name

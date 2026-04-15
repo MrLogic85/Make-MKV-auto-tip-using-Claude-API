@@ -56,22 +56,9 @@ if ($bdmvFolders.Count -eq 0) {
 
 Write-Log "Found $($bdmvFolders.Count) BDMV folder(s) in $sourceRoot"
 
-$copyJob           = $null
-$lastCopySucceeded = $false
-$lastSourceFolder  = $null
+$copyJob = $null
 
 foreach ($folder in $bdmvFolders) {
-
-    # Wait for the previous copy to finish, then delete that source folder if it succeeded
-    $lastCopySucceeded = Wait-CopyJob
-    if ($lastSourceFolder) {
-        if ($lastCopySucceeded) {
-            Remove-Item -Path $lastSourceFolder -Recurse -Force
-            Write-Log "Deleted source folder: $lastSourceFolder"
-        } else {
-            Write-Log "Skipping delete of $lastSourceFolder — previous copy failed."
-        }
-    }
 
     $filePath = $folder.FullName
     Write-Log ""
@@ -190,12 +177,19 @@ foreach ($folder in $bdmvFolders) {
     $localFinalMkv = Invoke-FilterAudio $tempMkv $audioResult.KeepIds $movieName
 
     # -------------------------------------------------------------------------
-    # Step 4: Copy to destination (background job)
+    # Step 4: Copy to destination, then delete source folder
     # -------------------------------------------------------------------------
     Write-Log ""
-    Write-Log "Step 4: Starting copy to destination in background..."
+    Write-Log "Step 4: Copying to destination..."
 
     $finalMkv = Start-DestinationCopy $localFinalMkv $movieName $movieEdition $destRoot
+
+    if (Wait-CopyJob) {
+        Remove-Item -Path $filePath -Recurse -Force
+        Write-Log "Deleted source folder: $filePath"
+    } else {
+        Write-Log "Copy failed; source folder retained: $filePath"
+    }
 
     $keptTracks   = $audioResult.AudioTracks | Where-Object { $audioResult.KeepIds -contains "$($_.id)" }
     $audioSummary = ($keptTracks | ForEach-Object { "$($_.codec)[$($_.properties.language)]" }) -join ", "
@@ -207,19 +201,6 @@ foreach ($folder in $bdmvFolders) {
     Write-Log "Location: $finalMkv"
     Write-Log "Log saved to: $logFile"
 
-    $lastSourceFolder = $filePath
-
 } # end foreach
-
-# Wait for the last copy job and clean up its source folder
-$lastCopySucceeded = Wait-CopyJob
-if ($lastSourceFolder) {
-    if ($lastCopySucceeded) {
-        Remove-Item -Path $lastSourceFolder -Recurse -Force
-        Write-Log "Deleted source folder: $lastSourceFolder"
-    } else {
-        Write-Log "Skipping delete of $lastSourceFolder — copy failed."
-    }
-}
 
 Write-Log "All folders processed."

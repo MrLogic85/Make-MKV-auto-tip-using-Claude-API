@@ -139,13 +139,8 @@ flowchart TD
     B[Select source and destination] --> C
     C[Scan source for BDMV subfolders] --> D
     D{More folders?}
-    D -- No --> Z
-    D -- Yes --> E
-    E[Wait for previous copy job] --> E2
-    E2{Copy succeeded?}
-    E2 -- Yes --> E3
-    E2 -- No --> F
-    E3[Delete previous source folder] --> F
+    D -- No --> ZEnd
+    D -- Yes --> F
     F@{ shape: subprocess, label: "makemkvcon: read title info from folder" } --> G
     G@{ shape: subprocess, label: "Claude: identify movie, edition and title" } --> G2
     G2{Identified?}
@@ -171,15 +166,11 @@ flowchart TD
     L -- Correct --> N
     L -- Incorrect --> M
     M@{ shape: sloped-rectangle, label: "Correct display dimensions" } --> N
-    N[Create destination folder and NFO] --> P
-    P[Start background copy job] -.-> S
-    P --> D
-    S@{ shape: lin-cyl, label: "Copy MKV to destination" }
-    Z[Wait for last copy job] --> Z2
-    Z2{Copy succeeded?}
-    Z2 -- Yes --> Z3
-    Z2 -- No --> ZEnd
-    Z3[Delete last source folder] --> ZEnd
+    N@{ shape: subprocess, label: "Copy MKV to destination" } --> O
+    O{Copy succeeded?}
+    O -- Yes --> P
+    O -- No --> D
+    P[Delete source folder] --> D
     ZEnd([Done])
 ```
 

@@ -19,7 +19,6 @@ if (-not (Test-Path $makemkvcon)) { Write-Log "Error: MakeMKV not found at $make
 if (-not (Test-Path $mkvmerge))   { Write-Log "Error: MKVToolNix not found at $mkvmerge"; exit }
 
 # Prompt for source folder
-Invoke-Beep
 $sourceRoot = Read-Host "Enter source folder path"
 if (-not (Test-Path $sourceRoot)) {
     Write-Host "Error: Source folder not found: $sourceRoot"

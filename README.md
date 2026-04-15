@@ -16,7 +16,7 @@ Two PowerShell scripts for ripping Blu-ray content to MKV. Both use the Claude A
 - **Native language preservation** – always keeps the film's original language even if not in the preferred list
 - **Aspect ratio check** – detects broken display dimensions (e.g. 1:1 square video) and prompts for correction
 - **Local SSD temp storage** – rips to a local SSD first before copying to the destination, avoiding slow network write speeds
-- **Background copy** – copies the finished MKV to the destination in the background while the next title is already being ripped
+- **Background copy** – disc script only: copies the finished MKV to the destination in the background while the next disc is being ripped
 - **Audible alert** – optional double beep when manual input is required
 - **NFO source tag** – writes a minimal NFO for media managers like tinyMediaManager
 
@@ -48,10 +48,7 @@ $mkvpropedit             = "C:\Program Files\MKVToolNix\mkvpropedit.exe"
 
 ### Destination folders
 
-`$defaultDestRoots` is an array of destination paths:
-- **One entry** – used automatically without prompting
-- **Multiple entries** – an arrow key menu is shown at startup; press Enter to confirm
-- **Empty** – script exits with an error
+`$defaultDestRoots` is an array of destination paths. At startup an arrow key menu shows all configured destinations plus an **Other...** option for entering a custom path. Script exits with an error if the array is empty.
 
 > **Tip:** If your destination is a NAS, mount it as a network drive and add the drive letter to `$defaultDestRoots`. The script rips to local SSD first to avoid slow network writes during the MakeMKV step.
 
@@ -79,7 +76,7 @@ The source folder is entered manually each time the script starts. Each immediat
 ```powershell
 & '.\Rip MKV from Folder.ps1'
 ```
-2. Select the source and destination folders if multiple are configured
+2. Enter the source folder path when prompted, then select a destination
 3. The script processes each BDMV subfolder in order — Claude identifies the movie, selects the best title and filters audio tracks
 4. Each source folder is deleted after its MKV has been successfully copied to the destination
 5. If a copy fails the source folder is left intact

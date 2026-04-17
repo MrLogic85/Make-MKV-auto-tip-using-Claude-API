@@ -56,7 +56,8 @@ foreach ($folder in $bdmvFolders) {
     # -------------------------------------------------------------------------
     # Parse titles from folder
     # -------------------------------------------------------------------------
-    $infoOutput = & $makemkvcon -r info "file://$filePath" 2>&1
+    $indexBdmv  = Join-Path $filePath "BDMV\index.bdmv"
+    $infoOutput = & $makemkvcon -r info $indexBdmv 2>&1
 
     $titles = Invoke-ParseTitles $infoOutput
 
@@ -124,7 +125,7 @@ foreach ($folder in $bdmvFolders) {
     $beforeRip   = Get-Date
     $tempMkvName = "temp_ripping_$([System.Guid]::NewGuid().ToString('N')).mkv"
     $tempMkv     = Join-Path $localTemp $tempMkvName
-    & $makemkvcon mkv "file://$filePath" $chosenTitle "$localTemp"
+    & $makemkvcon mkv $indexBdmv $chosenTitle "$localTemp"
     $ripExitCode = $LASTEXITCODE
 
     $generatedMkv = Get-ChildItem -Path $localTemp -Filter "*.mkv" |

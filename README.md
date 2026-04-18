@@ -54,7 +54,7 @@ $mkvpropedit             = "C:\Program Files\MKVToolNix\mkvpropedit.exe"
 
 ### Source folder (folder script only)
 
-The source folder is entered manually each time the script starts. Each immediate subfolder of the entered path that contains a `BDMV\` directory is treated as one disc to process.
+The source folder is entered manually each time the script starts. The script scans recursively for any folder containing a `BDMV\` directory and treats each as one disc to process. Collection subfolders (e.g. `Mission - Impossible Collection\`) are preserved in the destination.
 
 ## Usage
 
@@ -77,9 +77,9 @@ The source folder is entered manually each time the script starts. Each immediat
 & '.\Rip MKV from Folder.ps1'
 ```
 2. Enter the source folder path when prompted, then select a destination
-3. The script processes each BDMV subfolder in order — Claude identifies the movie, selects the best title and filters audio tracks
-4. Each source folder is deleted after its MKV has been successfully copied to the destination
-5. If a copy fails the source folder is left intact
+3. The script processes each BDMV folder in order — Claude identifies the movie, selects the best title and filters audio tracks
+4. After a successful rip, any existing NFO and SRT files are moved to the movie folder root, then all disc data subfolders (BDMV, CERTIFICATE, etc.) are deleted, leaving only the MKV and NFO
+5. If the rip or copy fails the source folder is left intact
 
 ## Workflow
 
@@ -162,7 +162,7 @@ flowchart TD
     O{Copy succeeded?}
     O -- Yes --> P
     O -- No --> D
-    P[Delete source folder] --> D
+    P[Move NFO/SRT to root, delete disc data subfolders] --> D
     ZEnd([Done])
 ```
 
@@ -183,7 +183,7 @@ Movies are saved as:
 <destRoot>\Movie Name (Year)\Movie Name (Year).nfo
 ```
 
-The NFO contains the source (`Blu-ray`) and edition if detected (e.g. `Director's Cut`).
+The NFO contains the source (`BLURAY`, `UHD_BLURAY`, or `DVD`, detected from resolution) and edition if detected (e.g. `Director's Cut`). For the folder script, an existing NFO in the source folder is preserved instead of generating a new one.
 
 Compatible with [tinyMediaManager](https://www.tinymediamanager.org/) and media players like Zidoo that use NFO metadata.
 
